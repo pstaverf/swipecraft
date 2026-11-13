@@ -1,0 +1,13 @@
+[Unit]
+Description=Swipecraft backup schedule
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+OnBootSec=30min
+RandomizedDelaySec=300
+Persistent=true
+AccuracySec=1min
+Unit=swipecraft-backup.service
+
+[Install]
+WantedBy=timers.target

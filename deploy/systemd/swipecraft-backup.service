@@ -1,0 +1,18 @@
+[Unit]
+Description=Swipecraft world backup
+After=swipecraft.service
+Requires=swipecraft.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=ROOT=/srv/swipecraft
+Environment=BACKUP_KEEP_DAILY=7
+Environment=BACKUP_KEEP_WEEKLY=4
+ExecStart=/srv/swipecraft/deploy/backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1800
+StandardOutput=append:/srv/swipecraft/logs/deploy.log
+StandardError=append:/srv/swipecraft/logs/deploy.log

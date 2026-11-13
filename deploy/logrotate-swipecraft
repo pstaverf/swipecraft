@@ -1,0 +1,33 @@
+__ROOT__/logs/console.log {
+    daily
+    rotate 14
+    maxsize 200M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root root
+}
+
+__ROOT__/server/logs/*.log {
+    daily
+    rotate 7
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root root
+}
+
+__ROOT__/logs/deploy.log {
+    monthly
+    rotate 6
+    missingok
+    notifempty
+    compress
+    copytruncate
+    su root root
+}

@@ -1,0 +1,58 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Swipecraft Core",
+    "description": "PvP anarchy core: border, rtp, season, anticheat, limits",
+    "uuid": "e4e654ee-b6d5-4d3d-b111-3b37891c8d75",
+    "version": [
+      1,
+      0,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      60
+    ]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "1b820070-aab4-4615-a5e2-fd35f387be3d",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "314c978b-5dbf-4a67-bcde-8e0ba74564dc",
+      "entry": "scripts/main.js",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.11.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.3.0"
+    },
+    {
+      "uuid": "c873313f-7689-4280-aa47-2847f4c1c49c",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    }
+  ]
+}
