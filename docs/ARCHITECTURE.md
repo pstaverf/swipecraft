@@ -1,0 +1,242 @@
+# Swipecraft — архитектура PvP-анархии на Bedrock 26.60
+
+Документ фиксирует выбор технологий, дерево проекта и правила, по которым пишется код всех последующих этапов.
+Всё, что помечено **ТРЕБУЕТ ПРОВЕРКИ**, проверяется на живом сервере до релиза соответствующего модуля.
+
+## 1. Матрица версий (проверено 13.11.2026)
+
+| Компонент | Версия | Статус |
+|---|---|---|
+| Minecraft Bedrock (клиент iPhone/Android) | 26.60+ (актуальные 26.62 / 26.63) | релиз 27.10.2026 |
+| Bedrock Dedicated Server (Linux) | 1.26.60.x | последняя стабильная ветка 26.6x |
+| `min_engine_version` паков | `[1, 26, 60]` | обязательно |
+| `@minecraft/server` | **2.11.0** (stable) | 2.12.0-beta не используем |
+| `@minecraft/server-ui` | **2.3.0** (stable) | |
+| `@minecraft/vanilla-data` | **1.26.60** | типы ID блоков/предметов/эффектов |
+| Транспорт | **NetherNet** (RakNet deprecated с 26.60) | TCP signaling + UDP на игрока |
+| Node.js (только сборка) | 22 LTS | на сервере не требуется |
+| TypeScript | 5.x, `strict: true` | |
+
+Проверка версий выполнена по реестру npm (`registry.npmjs.org/@minecraft/server`, `dist-tags.latest = 2.11.0`, `@minecraft/server-ui = 2.3.0`, `@minecraft/vanilla-data = 1.26.60`) и по ченджлогу Bedrock 26.60.
+
+## 2. Выбор технологии
+
+| Критерий | BDS + Script API 2.11.0 | Endstone 0.11.x | PocketMine-MP | PowerNukkitX | Paper + Geyser |
+|---|---|---|---|---|---|
+| Поддержка 26.60 | официальная, день в день | есть (0.11.15 / BDS 1.26.60.6), но с патчами | отстаёт от релизов | отстаёт сильно | через Geyser build 1273+ |
+| Язык плагинов | **TypeScript** (требование ТЗ) | Python / C++ | PHP | Java | Java |
+| Типизация API | полная (`.d.ts` из npm) | частичная, свои стабы | слабая | средняя | полная |
+| Доступ к пакетам (античит) | **нет** | да (C++ hooks) | да | да | нет (Bedrock проксируется) |
+| Формы/UI для мобильных | нативно (`@minecraft/server-ui`) | нативно | нативно | нативно | через Bedrock UI |
+| Кастомные предметы/мобы/частицы | BP + RP, автораздача клиенту | BP + RP | BP + RP | BP + RP | BP + RP |
+| Производительность на 100 онлайн | базовая | ~2× TPS (заявка авторов) | ниже | средняя | накладные расходы Geyser |
+| Риск поломки при апдейте | низкий | средний (патчи BDS) | высокий | высокий | средний |
+| Соответствие ТЗ (TS, без модов на клиенте) | **да** | нет (Python/C++) | нет | нет | нет (нужен Java-сервер) |
+
+**Решение: BDS 1.26.60 + TypeScript Script API (`@minecraft/server` 2.11.0).**
+
+Обоснование:
+1. ТЗ требует строгий TypeScript и никаких клиентских модов — это ровно Script API + BP/RP, которые сервер раздаёт автоматически.
+2. Официальная поддержка версии: обновление BDS выходит одновременно с клиентом, миграции предсказуемы.
+3. Endstone даёт пакетный античит и ~2× TPS, но плагины — Python/C++, то есть нарушение ТЗ и потеря типовой безопасности. Он остаётся планом «Б» на случай, если эвристического античита не хватит: логика детекта вынесена в отдельный слой (`src/security/checks/*`), чтобы её можно было переписать на C++-плагин без переделки игровых систем.
+4. PocketMine-PowerNukkitX отстают от 26.6x, а Paper+Geyser добавляет второй сервер, второй язык и накладные расходы — для 100 онлайн под мобильные это лишний риск без выгоды.
+
+## 3. Что Script API реально может и чего не может (влияет на весь код)
+
+| Задача из ТЗ | Возможность | Как реализуем |
+|---|---|---|
+| Граница мира, сужение | API нет | тик-контроль позиции игроков (сэмплирование), отброс внутрь + предупреждение, запрет установки блоков вне радиуса через `playerPlaceBlock` |
+| Спавн-лобби, safe zone | да | зона по координатам: отмена PvP (`entityHurt`), отмена разрушения/установки, `playerSpawn` → телепорт в лобби |
+| `/rtp` | только namespaced-команда | `sw:rtp` + кнопка в меню; поиск безопасной точки через `dimension.getBlock`/`getTopmostBlock` |
+| Кастомные команды | `CustomCommandRegistry` (`system.beforeEvents.startup`) | обязателен namespace `sw:`, лимит прав через `permissionLevel` |
+| Кастомный босс | BP entity + `entity.scale`, `EntityHealthComponent`, `applyDamage`, `addEffect` | фазы на таймере, урон по вкладу через `entityHitEntity` |
+| Аирдроп с частицами | `dimension.spawnParticle` + RP particle + сущность-контейнер | падение через тик-телепорт вниз, посадка, сундук-контейнер |
+| Титры, звуки, отсчёт | `player.onScreenDisplay.setTitle`, `world.playSound`, `player.camera.fade` | анонсы за 5 мин / 1 мин / 10 сек |
+| Кейсы, кастомные предметы | BP `items/*.json` + RP текстуры + `ItemStack` + `Container` | шансы в коде, выдача `addItem` с откатом при полном инвентаре |
+| Магазин, рынок | контейнеры + валюта в профиле | без NPC-сущностей, меню-формы |
+| Лидерборды | `world.scoreboard` + профили | топ-10, обновление по событию, не по тику |
+| HTTP / файлы / БД | **недоступно** (stable API) | всё состояние в dynamic properties, снапшоты — бэкапом сервера |
+| Античит (reach, killaura, fly) | только эвристика по событиям | пороги + скоринг + эскалация санкций; ложные срабатывания разбираются логом |
+| Анти-дюп, анти-краш | частично | контроль контейнеров/дропа, лимиты сущностей, лимит редстоуна, защита от спама событиями |
+| Anti-DDoS | не в скрипте | сетевой уровень: фильтрация провайдера + ufw/nftables + лимиты NetherNet |
+
+Отсюда два архитектурных правила, действующих во всех этапах:
+- **никакой тяжёлой работы в тике**: всё, что можно, выносится в события и в бюджетный планировщик;
+- **состояние пишется в dynamic properties чанками** с атомарной заменой ключа, чтобы падение сервера не рвало JSON.
+
+## 4. Дерево проекта
+
+```
+swipecraft/
+├── README.md                        обзор, быстрый старт, статус этапов
+├── package.json                     зависимости сборки и скрипты npm
+├── tsconfig.json                    strict TypeScript, target ES2022
+├── .gitignore                       node_modules, scripts/main.js, *.mcpack, backups
+├── config/
+│   └── server.properties            эталонный конфиг BDS (transport=nethernet)
+├── deploy/
+│   ├── install-bds.sh               скачивание и распаковка BDS 1.26.60, линковка паков
+│   ├── update-bds.sh                обновление BDS с бэкапом и откатом
+│   ├── firewall.sh                  ufw: TCP-сигналинг + UDP-диапазон под NetherNet
+│   ├── sysctl-nethernet.conf        лимиты сокетов, conntrack, буферы
+│   ├── backup.sh                    hot-бэкап мира, ротация, offsite
+│   ├── restore.sh                   восстановление из бэкапа
+│   ├── healthcheck.sh               проверка /v1/join и TPS-маркеров
+│   ├── logrotate-swipecraft         ротация логов BDS и скриптов
+│   └── systemd/
+│       ├── swipecraft.service       автозапуск, автоперезапуск, лимиты
+│       ├── swipecraft-backup.service
+│       └── swipecraft-backup.timer  расписание бэкапов
+├── packs/
+│   ├── behavior_pack/
+│   │   ├── manifest.json            модуль script + зависимости BP
+│   │   ├── pack_icon.png
+│   │   ├── entities/                аирдроп-сундук, босс, моб кровавой луны
+│   │   ├── items/                   кейсы, кастомные предметы, валютные жетоны
+│   │   ├── loot_tables/             таблицы наград ивентов и кейсов
+│   │   ├── scripts/main.js          артефакт сборки (в git не хранится)
+│   │   └── texts/{ru_RU,en_US}.lang локализация предметов и сущностей
+│   └── resource_pack/
+│       ├── manifest.json
+│       ├── pack_icon.png
+│       ├── textures/                item_texture.json + PNG предметов и UI
+│       ├── particles/               аирдроп-луч, зона KOTH, кровавая луна, уровень
+│       ├── sounds/                  sound_definitions.json + ogg (ивенты, кейсы)
+│       └── texts/{ru_RU,en_US}.lang
+├── src/
+│   ├── main.ts                      единственная точка входа, поднимает kernel
+│   ├── bootstrap/
+│   │   ├── startup.ts               system.beforeEvents.startup: команды, энумы
+│   │   └── world-load.ts            world.afterEvents.worldLoad: инициализация мира
+│   ├── kernel/
+│   │   ├── kernel.ts                порядок инициализации модулей, graceful shutdown
+│   │   ├── ticker.ts                один master-тик + бюджет на задачу + бакеты
+│   │   ├── bus.ts                   типизированная шина доменных событий
+│   │   ├── store.ts                 persist: чанки dynamic properties, атомарная замена
+│   │   ├── logger.ts                уровни, кольцевой буфер последних ошибок
+│   │   ├── clock.ts                 реальное время, UTC, сезонные окна
+│   │   └── guard.ts                 safeRun, circuit breaker, изоляция падений модулей
+│   ├── config/
+│   │   ├── index.ts                 все числа баланса в одном месте
+│   │   └── features.ts              флаги включения модулей
+│   ├── i18n/
+│   │   ├── index.ts                 t(player, key, vars), язык в профиле
+│   │   └── dict/{ru.ts,en.ts}       словари
+│   ├── world/
+│   │   ├── border.ts                сужающаяся граница, расписание по неделям
+│   │   ├── spawn.ts                 лобби, safe zone, точка респавна
+│   │   ├── rtp.ts                   случайная телепортация с кулдауном
+│   │   ├── season.ts                сезонный вайп, ротация сида, анонс
+│   │   ├── limits.ts                лимиты сущностей, хопперов, редстоуна
+│   │   └── rules.ts                 gameRules и правила анархии
+│   ├── security/
+│   │   ├── anticheat.ts             оркестратор детектов и скоринга
+│   │   ├── checks/                  reach, killaura, speed, fly, nuker, autoclick, flood
+│   │   ├── antidupe.ts              защита контейнеров, дропа, крафта
+│   │   ├── sanctions.ts             эскалация: предупреждение → кик → темпбан
+│   │   └── audit.ts                 аудит-лог действий игроков и админов
+│   ├── events/
+│   │   ├── manager.ts               расписание, persist, анонсы, отсчёт, награды
+│   │   ├── types.ts                 контракт ивента
+│   │   └── impl/                    airdrop, bloodmoon, koth, bossraid, doubleloot, bountyhunt, lifesteal
+│   ├── meta/
+│   │   ├── players.ts               профиль игрока (деньги, киллы, время, ранг, язык)
+│   │   ├── clans.ts                 кланы, инвайты, войны, лидерборд
+│   │   ├── economy.ts               валюта, переводы, анти-инфляция
+│   │   ├── shop.ts                  магазин
+│   │   ├── market.ts                рынок игроков
+│   │   ├── streaks.ts               киллстрики и награды за серии
+│   │   ├── bounties.ts              баунти и охота за головами
+│   │   ├── daily.ts                 ежедневные награды
+│   │   ├── quests.ts                квесты
+│   │   ├── battlepass.ts            сезонный батл-пасс
+│   │   ├── cases.ts                 кейсы, шансы, pity-механика
+│   │   ├── custom-items.ts          выдача и распознавание кастомных предметов
+│   │   ├── ranks.ts                 ранги, префиксы, привилегии
+│   │   └── leaderboards.ts          лидерборды и scoreboard
+│   ├── ui/
+│   │   ├── router.ts                главное меню и навигация между экранами
+│   │   ├── components.ts            хелперы форм: пагинация, подтверждения, иконки
+│   │   └── screens/                 main, clan, shop, market, cases, quests, stats, settings, admin
+│   ├── commands/
+│   │   ├── registry.ts              регистрация и роутинг custom commands
+│   │   └── custom/                  sw:rtp, sw:menu, sw:event, sw:admin, sw:clan, sw:pay, sw:spawn
+│   └── types/
+│       ├── domain.ts                доменные типы (Profile, Clan, EventState, ...)
+│       ├── events.ts                типы шины и детектов
+│       └── env.d.ts                 декларации для сборки
+└── tools/
+    ├── build.mjs                    esbuild: src/main.ts → packs/behavior_pack/scripts/main.js
+    ├── package-pack.mjs             упаковка BP+RP в .mcpack/.mcaddon
+    └── validate.mjs                 валидация manifest.json, JSON паков, версий API
+```
+
+## 5. Runtime-архитектура
+
+### 5.1 Жизненный цикл
+
+1. `system.beforeEvents.startup` — регистрация custom commands и enum'ов. Раньше этого момента нельзя вызывать почти ничего.
+2. `world.afterEvents.worldLoad` — загрузка состояния из `store`, инициализация модулей, восстановление расписания ивентов, первый сейв.
+3. Дальше работает один master-тикер.
+4. `world.beforeEvents.playerLeave` / `world.afterEvents.playerLeave` — финальный сейв профиля и снятие подписок.
+5. Явного «shutdown» события в API нет, поэтому сохранение строится на периодических сейвах (60 сек) + сейве на ключевых действиях + сейве в `playerLeave`.
+
+### 5.2 Тикер и бюджет
+
+- Один `system.runInterval(masterTick, 1)`. Никаких россыпей интервалов — они не дают контроля бюджета.
+- Каждая задача имеет бакет (`everyTick`, `every5`, `every20`, `every100`) и свой лимит миллисекунд.
+- Тяжёлые проходы по миру (граница, лимиты сущностей, лидерборды) размазываются: обрабатывается доля игроков за тик, полный круг за N тиков.
+- Полный обход сущностей мира запрещён; только `dimension.getEntities` с узким фильтром и кэшем на 20 тиков.
+- При превышении бюджета задача логирует и автоматически переходит в более редкий бакет (деградация вместо лага).
+
+### 5.3 Хранилище
+
+- `world.setDynamicProperty(key, string)` — состояние мира, JSON, чанки по 8 КБ, ключи вида `sw:store:v1:<domain>:<chunk>`.
+- Профиль игрока — `player.setDynamicProperty`, с зеркалом в мире для лидербордов (source of truth — профиль).
+- Запись — «собрать в памяти → записать все чанки → удалить лишние → обновить указатель версии». Читатель видит либо старую, либо новую версию.
+- Лимиты объёма dynamic properties в документации не нормированы явно — **ТРЕБУЕТ ПРОВЕРКИ** на живом сервере; до подтверждения: не более 30 чанков на домен, самый большой домен — кланы.
+- Бэкап мира = бэкап состояния скриптов, отдельная БД не нужна.
+
+### 5.4 i18n
+
+Ключи в словарях, `t(player, key, vars)` подставляет параметры. Язык хранится в профиле, по умолчанию `ru`, переключатель — в меню настроек. Формы собираются из словаря, поэтому переключение мгновенное.
+
+### 5.5 Отказоустойчивость
+
+- `guard.safeRun(module, fn)` вокруг каждого обработчика: ошибка одного модуля не роняет остальные.
+- Circuit breaker: 5 ошибок подряд → модуль отключается до перезагрузки, админам уходит сообщение и запись в аудит.
+- Все внешние данные (аргументы команд, ответы форм) валидируются по типам и диапазонам до применения.
+
+## 6. Пайплайн сборки и деплоя
+
+```
+npm ci
+npm run build      # esbuild: src/main.ts → packs/behavior_pack/scripts/main.js (ESM, one file)
+npm run validate   # manifest/JSON/версии API
+npm run pack       # .mcaddon для ручной проверки на клиенте
+deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → systemctl restart swipecraft
+```
+
+Пакеты подключаются к миру через `world_behavior_packs.json` / `world_resource_packs.json` с фиксированными UUID и версией, поэтому клиент получает контент автоматически при входе — без установки чего-либо вручную.
+
+## 7. Бюджеты производительности (границы, заложенные в код)
+
+| Метрика | Бюджет | Как достигается |
+|---|---|---|
+| Master-тик | ≤ 8 мс | бакеты, сэмплирование, кэш фильтров |
+| Ивент-менеджер | ≤ 1 мс/тик | только таймеры, без обхода мира |
+| Античит | ≤ 2 мс/тик | проверки на событиях, не на тике |
+| Сущности в мире | ≤ 1200 | `limits.ts` чистит «мусор» по возрасту |
+| Частицы ивентов | ≤ 40 вызовов/сек на мир | частота и радиус задаются в config |
+| Сейв состояния | ≤ 1 раз в 60 сек | инкрементальные домены, dirty-флаги |
+
+## 8. Разделение этапов по модулям
+
+| Этап | Модули |
+|---|---|
+| 1 | `docs/ARCHITECTURE.md`, `docs/HOSTING.md` |
+| 2 | `deploy/*`, `config/server.properties`, `tools/build.mjs`, `src/main.ts`, `src/kernel/*`, `src/bootstrap/*` |
+| 3 | `src/world/*`, `src/security/*`, `src/meta/players.ts`, `src/meta/economy.ts` (база) |
+| 4 | `src/events/*`, `packs/*/entities|particles|sounds`, `src/commands/custom/event.ts` |
+| 5 | `src/meta/*`, `src/ui/*`, `src/commands/custom/*`, `packs/behavior_pack/items/*` |
+| 6 | `docs/GROWTH.md`, донат-модуль поверх `ranks.ts`/`cases.ts` |

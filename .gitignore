@@ -1,0 +1,10 @@
+node_modules/
+packs/behavior_pack/scripts/main.js
+packs/behavior_pack/scripts/main.js.map
+dist/
+*.mcpack
+*.mcaddon
+backups/
+*.log
+.DS_Store
+.env
