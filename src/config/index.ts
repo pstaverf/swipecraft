@@ -48,5 +48,6 @@ export const STORE_KEYS = {
   border: "sw:border",
   acConfig: "sw:ac:cfg",
   audit: "sw:audit",
+  events: "sw:events",
   profilePrefix: "sw:p:",
 } as const;

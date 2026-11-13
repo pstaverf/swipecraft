@@ -11,6 +11,7 @@ import { audit, auditReport, recentAudit } from "../security/audit";
 import { borderInfo, borderRadius } from "../world/border";
 import { armWipe, disarmWipe, getSeason, seasonStatus } from "../world/season";
 import { isAdmin, openMenu } from "./menu";
+import { EVENT_IDS, eventName, eventsStatus, startEvent, stopEvent } from "../events/manager";
 
 const DETECTORS = ["reach", "attackRate", "speed", "fly", "nuke", "placeRate", "containerSpam", "entitySpam", "stackAnomaly"];
 
@@ -61,6 +62,7 @@ export const openAdminPanel = async (player: Player): Promise<void> => {
       .button(t(player, "admin.sanctions"))
       .button(t(player, "admin.season"))
       .button(t(player, "admin.border"))
+      .button(t(player, "admin.events"))
       .button(t(player, "admin.modules"))
       .button(t(player, "common.back"));
 
@@ -87,6 +89,9 @@ export const openAdminPanel = async (player: Player): Promise<void> => {
         await openBorder(player);
         return;
       case 6:
+        await openEvents(player);
+        return;
+      case 7:
         await openModules(player);
         return;
       default:
@@ -270,6 +275,30 @@ const openBorder = async (player: Player): Promise<void> => {
       .button(t(player, "common.back"));
     const response = await form.show(player);
     if (response.canceled || response.selection === undefined) return;
+    await openAdminPanel(player);
+  });
+};
+
+const openEvents = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:admin:events", async () => {
+    const form = new ActionFormData().title(t(player, "admin.events")).body(eventsStatus().join("\n"));
+    for (const id of EVENT_IDS) form.button(`▶ ${eventName(id)}`);
+    form.button(t(player, "admin.eventStop"));
+    form.button(t(player, "common.back"));
+
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) return;
+    if (response.selection < EVENT_IDS.length) {
+      const id = EVENT_IDS[response.selection];
+      const message = startEvent(id, true, player.name);
+      player.sendMessage(message);
+      audit(player.name, "event-start-ui", id, "из админ-меню");
+      return;
+    }
+    if (response.selection === EVENT_IDS.length) {
+      player.sendMessage(stopEvent(player.name));
+      return;
+    }
     await openAdminPanel(player);
   });
 };

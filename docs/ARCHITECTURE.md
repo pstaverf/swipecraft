@@ -135,8 +135,13 @@ swipecraft/
 │   │   ├── antidupe.ts              троттлинг контейнеров, аудит аномалий
 │   │   └── audit.ts                 аудит-лог действий игроков и админов
 │   ├── events/
-│   │   ├── manager.ts               расписание, persist, анонсы, отсчёт, награды
-│   │   ├── types.ts                 контракт ивента
+│   │   ├── manager.ts               расписание, persist, анонсы, отсчёт, ротация, восстановление
+│   │   ├── config.ts                расписание, конфиг каждого ивента, таблицы лута
+│   │   ├── types.ts                 контракт ивента и persistent-состояние
+│   │   ├── api.ts                   анонсы, титры, звуки, проверка наград, работа с зонами
+│   │   ├── loot.ts                  роллы по весам, выдача в инвентарь, наполнение контейнера
+│   │   ├── pending.ts               отложенные награды для офлайн-участников
+│   │   ├── messages.ts              ru/en тексты ивентов через addDict
 │   │   └── impl/                    airdrop, bloodmoon, koth, bossraid, doubleloot, bountyhunt, lifesteal
 │   ├── meta/
 │   │   ├── players.ts               профиль игрока (деньги, киллы, время, ранг, язык)
@@ -247,6 +252,6 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | 1 | `docs/ARCHITECTURE.md`, `docs/HOSTING.md` |
 | 2 | `deploy/*`, `config/server.properties`, `tools/build.mjs`, `src/main.ts`, `src/kernel/*`, `src/bootstrap/*` |
 | 3 | `src/world/*`, `src/security/*`, `src/meta/players.ts`, `src/meta/economy.ts` (база) |
-| 4 | `src/events/*`, `packs/*/entities|particles|sounds`, `src/commands/custom/event.ts` |
+| 4 | `src/events/*`, `src/commands/registry.ts` (sw:event), `src/ui/admin.ts` (Ивенты) — готово |
 | 5 | `src/meta/*`, `src/ui/*`, `src/commands/custom/*`, `packs/behavior_pack/items/*` |
 | 6 | `docs/GROWTH.md`, донат-модуль поверх `ranks.ts`/`cases.ts` |

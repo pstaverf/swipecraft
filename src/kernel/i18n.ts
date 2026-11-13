@@ -39,6 +39,8 @@ const ru: Dict = {
   "admin.sanctions": "Санкции (вручную)",
   "admin.season": "Сезон и вайп",
   "admin.border": "Граница мира",
+  "admin.events": "Ивенты",
+  "admin.eventStop": "Остановить активный ивент",
   "admin.modules": "Модули и задачи",
   "admin.auditEmpty": "Аудит пуст",
   "admin.noScores": "Подозрительных игроков нет",
@@ -101,6 +103,8 @@ const en: Dict = {
   "admin.sanctions": "Manual sanctions",
   "admin.season": "Season and wipe",
   "admin.border": "World border",
+  "admin.events": "Events",
+  "admin.eventStop": "Stop the active event",
   "admin.modules": "Modules and tasks",
   "admin.auditEmpty": "Audit is empty",
   "admin.noScores": "No suspicious players",
@@ -128,6 +132,13 @@ const en: Dict = {
 };
 
 const dicts: Record<Lang, Dict> = { ru, en };
+const extra: Record<Lang, Dict> = { ru: {}, en: {} };
+
+export const addDict = (lang: Lang, dict: Dict): void => {
+  Object.assign(extra[lang], dict);
+};
+
+const lookup = (lang: Lang, key: string): string => dicts[lang][key] ?? extra[lang][key] ?? dicts.ru[key] ?? extra.ru[key] ?? key;
 const playerLangs = new Map<string, Lang>();
 
 export const setLang = (playerId: string, lang: Lang): void => {
@@ -138,13 +149,13 @@ export const getLang = (playerId: string): Lang => playerLangs.get(playerId) ?? 
 
 export const t = (player: Player | undefined, key: string, params?: Record<string, string | number>): string => {
   const lang = player ? getLang(player.id) : "ru";
-  const template = dicts[lang][key] ?? dicts.ru[key] ?? key;
+  const template = lookup(lang, key);
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`));
 };
 
 export const raw = (lang: Lang, key: string, params?: Record<string, string | number>): string => {
-  const template = dicts[lang][key] ?? dicts.ru[key] ?? key;
+  const template = lookup(lang, key);
   if (!params) return template;
   return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`));
 };

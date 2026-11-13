@@ -97,6 +97,13 @@ export const isBannedNow = (player: Player): boolean => {
 
 export const profileFlushIntervalTicks = CONFIG.profiles.flushTicks;
 
+export const effectivePlaySeconds = (player: Player): number => {
+  const profile = getProfile(player);
+  const started = sessionStart.get(player.id);
+  const live = started ? Math.floor((Date.now() - started) / 1000) : 0;
+  return profile.playSeconds + live;
+};
+
 export const registerProfileTasks = (register: (name: string, ticks: number, budget: number, fn: () => void) => void): void => {
   register("profiles-flush", CONFIG.profiles.flushTicks, 20, () => {
     flushProfiles();

@@ -5,6 +5,7 @@ import { forgetPlayer, registerProfileTasks, saveProfile } from "../meta/profile
 import { initAntiDupe } from "../security/antidupe";
 import { initAnticheat, resetState } from "../security/anticheat";
 import { flushAudit, initAudit } from "../security/audit";
+import { initEvents } from "../events/manager";
 import { initBorder } from "../world/border";
 import { initLimits } from "../world/limits";
 import { applyWorldRules } from "../world/rules";
@@ -26,6 +27,7 @@ const boot = (): void => {
   initLimits();
   initAntiDupe();
   initAnticheat();
+  initEvents();
 
   registerProfileTasks(registerTask);
   registerTask("audit-flush", 600, 10, flushAudit);

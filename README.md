@@ -10,6 +10,7 @@ PvP-анархия для Minecraft Bedrock **26.60+** (iPhone / Android, без
 | 1 | Архитектура, выбор технологий, хостинг | готово → `docs/ARCHITECTURE.md`, `docs/HOSTING.md` |
 | 2 | Установка, запуск, systemd, бэкапы, firewall, анти-лаг | готово → `docs/DEPLOY.md`, `docs/SERVER-PROPERTIES.md`, `deploy/` |
 | 3 | Ядро анархии: лобби, rtp, граница, сезон, античит | готово → `docs/ANTICHEAT.md`, `docs/ANTIDUPE.md`, `src/` |
+| 4 | Планировщик ивентов и 7 механик | готово → `docs/EVENTS.md`, `src/events/` |
 | 4 | Ивенты каждые 6 часов (7 механик) | ожидает |
 | 5 | Кланы, экономика, кейсы, квесты, UI | ожидает |
 | 6 | Монетизация и рост | ожидает |
@@ -39,6 +40,9 @@ bash deploy/deploy-packs.sh   # разложить паки на сервере,
 /sw:rtp                     случайная телепортация
 /sw:admin                   админ-панель (нужен тег admin)
 /sw:ac show|set|reset       конфиг античита без перезапуска
+/sw:event status|next|list  состояние планировщика ивентов
+/sw:event start <id>        ручной запуск ивента (airdrop, bloodmoon, koth, bossraid, doubleloot, bountyhunt, lifesteal)
+/sw:event stop              остановить активный ивент
 ```
 
 Тег админа выдаётся в консоли сервера: `tag <ник> add admin`.
@@ -58,6 +62,7 @@ bash deploy/deploy-packs.sh   # разложить паки на сервере,
 - `docs/SERVER-PROPERTIES.md` — каждый ключ конфигурации с обоснованием.
 - `docs/ANTICHEAT.md` — детекты, окна допуска, надёжность, горячая правка конфига.
 - `docs/ANTIDUPE.md` — таблица векторов дюпа и что из них закрывается скриптом.
+- `docs/EVENTS.md` — расписание, 7 ивентов, таблицы лута, восстановление после падения, нагрузка на тики.
 
 ## Эксплуатация
 

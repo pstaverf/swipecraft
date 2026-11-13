@@ -14,6 +14,8 @@ import { audit } from "../security/audit";
 import { randomTeleport } from "../world/rtp";
 import { openAdminPanel } from "../ui/admin";
 import { isAdmin, openMenu } from "../ui/menu";
+import { EVENT_IDS, eventName, eventsStatus, isEventId, nextEvent, startEvent, stopEvent } from "../events/manager";
+import { formatDuration } from "../kernel/util";
 
 type Handler = (player: Player, args: string[]) => Promise<string> | string;
 
@@ -104,5 +106,23 @@ export const registerCommands = (event: StartupEvent): void => {
     return "подкоманды: show, set, reset";
   });
 
-  log.info("commands", "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac");
+  register(event, "sw:event", "Ивенты: status | next | list | start <id> | stop", CommandPermissionLevel.GameDirectors, (player, args) => {
+    if (!isAdmin(player)) return t(player, "admin.noPermission");
+    const sub = args[0] ?? "status";
+    if (sub === "status") return eventsStatus().join("\n").slice(0, 900);
+    if (sub === "next") {
+      const next = nextEvent();
+      return `Следующий: ${eventName(next.id)} через ${formatDuration(next.at - Date.now())}`;
+    }
+    if (sub === "list") return EVENT_IDS.map((id) => `${id} — ${eventName(id)}`).join("\n");
+    if (sub === "stop") return stopEvent(player.name);
+    if (sub === "start") {
+      const id = args[1];
+      if (!id || !isEventId(id)) return `укажи id: ${EVENT_IDS.join(", ")}`;
+      return startEvent(id, true, player.name);
+    }
+    return "подкоманды: status, next, list, start <id>, stop";
+  });
+
+  log.info("commands", "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac, sw:event");
 };
