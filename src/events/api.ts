@@ -4,6 +4,7 @@ import { log } from "../kernel/logger";
 import { distance3d } from "../kernel/util";
 import { effectivePlaySeconds, getProfile } from "../meta/profiles";
 import { audit } from "../security/audit";
+import { recordEvent } from "../meta/progress";
 import { EVENT_SCHEDULE } from "./config";
 import { giveStacks, rollTable } from "./loot";
 import type { ActiveEvent, LootTable } from "./types";
@@ -105,6 +106,7 @@ export const grantLoot = (
   }
   const stacks = rollTable(table);
   giveStacks(player, stacks);
+  recordEvent(player);
   audit("events", "reward", player.name, `${active.id}: ${reason}, ${stacks.length} предметов`);
   return true;
 };

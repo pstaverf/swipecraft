@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, readdir, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync } from "node:zlib";
@@ -21,19 +21,19 @@ const crc32 = (buffer) => {
   return (crc ^ 0xffffffff) >>> 0;
 };
 
-const walk = async (dir, base = dir) => {
+const walk = async (dir, base = dir, prefix = "") => {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(full, base)));
-    else files.push({ full, name: relative(base, full).split("\\").join("/") });
+    if (entry.isDirectory()) files.push(...(await walk(full, base, prefix)));
+    else files.push({ full, name: `${prefix}${relative(base, full).split("\\").join("/")}` });
   }
   return files;
 };
 
-const zip = async (sourceDir, outFile) => {
-  const files = await walk(sourceDir);
+const zip = async (sourceDir, outFile, prefix = "") => {
+  const files = await walk(sourceDir, sourceDir, prefix);
   const chunks = [];
   const central = [];
   let offset = 0;
@@ -96,7 +96,18 @@ const rpOut = resolve(outDir, "swipecraft_rp.mcpack");
 const bpCount = await zip(bp, bpOut);
 const rpCount = await zip(rp, rpOut);
 
+const addonOut = resolve(outDir, "swipecraft.mcaddon");
+const packsRoot = resolve(outDir, ".packs");
+await rm(packsRoot, { recursive: true, force: true });
+await mkdir(resolve(packsRoot, "swipecraft_behavior_pack"), { recursive: true });
+await mkdir(resolve(packsRoot, "swipecraft_resource_pack"), { recursive: true });
+await cp(bp, resolve(packsRoot, "swipecraft_behavior_pack"), { recursive: true });
+await cp(rp, resolve(packsRoot, "swipecraft_resource_pack"), { recursive: true });
+const addonCount = await zip(packsRoot, addonOut);
+await rm(packsRoot, { recursive: true, force: true });
+
 const bpStat = await stat(bpOut);
 const rpStat = await stat(rpOut);
 console.log(`[pack] ${bpOut} (${bpCount} files, ${bpStat.size} bytes)`);
-console.log(`[pack] ${rpOut} (${rpCount} files, ${rpStat.size} bytes)`);
+const addonStat = await stat(addonOut);
+console.log(`[pack] ${addonOut} (${addonCount} files, ${addonStat.size} bytes)`);

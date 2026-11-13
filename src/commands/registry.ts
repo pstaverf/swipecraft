@@ -14,6 +14,13 @@ import { audit } from "../security/audit";
 import { randomTeleport } from "../world/rtp";
 import { openAdminPanel } from "../ui/admin";
 import { isAdmin, openMenu } from "../ui/menu";
+import { openWallet } from "../ui/economy";
+import { openMarket } from "../ui/market";
+import { openCases } from "../ui/cases";
+import { openClan } from "../ui/clans";
+import { openProgress } from "../ui/progress";
+import { openDonate } from "../ui/donations";
+import { metaAdminLines, metaChangeParam, metaFlush, metaResetConfig, metaStatusLines, metaTxLines } from "../meta/index";
 import { EVENT_IDS, eventName, eventsStatus, isEventId, nextEvent, startEvent, stopEvent } from "../events/manager";
 import { formatDuration } from "../kernel/util";
 
@@ -88,6 +95,61 @@ export const registerCommands = (event: StartupEvent): void => {
     return "";
   });
 
+  register(event, "sw:eco", "Кошелёк, переводы, квесты", CommandPermissionLevel.Any, async (player) => {
+    await openWallet(player);
+    return "";
+  });
+
+  register(event, "sw:market", "Рынок игроков", CommandPermissionLevel.Any, async (player) => {
+    await openMarket(player);
+    return "";
+  });
+
+  register(event, "sw:case", "Кейсы и шансы", CommandPermissionLevel.Any, async (player) => {
+    await openCases(player);
+    return "";
+  });
+
+  register(event, "sw:clan", "Клан: состав, казна, войны", CommandPermissionLevel.Any, async (player) => {
+    await openClan(player);
+    return "";
+  });
+
+  register(event, "sw:quest", "Ежедневки и квесты", CommandPermissionLevel.Any, async (player) => {
+    await openProgress(player);
+    return "";
+  });
+
+  register(event, "sw:don", "Донат: каталог и заявка", CommandPermissionLevel.Any, async (player) => {
+    await openDonate(player);
+    return "";
+  });
+
+  register(event, "sw:meta", "Мета-слой: status | flush | tx | set <параметр> <число> | reset", CommandPermissionLevel.GameDirectors, (player, args) => {
+    if (!isAdmin(player)) return t(player, "admin.noPermission");
+    const sub = args[0] ?? "status";
+    if (sub === "status") return metaStatusLines().join("\n").slice(0, 900);
+    if (sub === "flush") {
+      metaFlush();
+      audit(player.name, "meta-flush", "meta", "принудительное сохранение");
+      return "сохранено";
+    }
+    if (sub === "tx") return metaTxLines(12).join("\n").slice(0, 900);
+    if (sub === "info") return metaAdminLines().join("\n").slice(0, 900);
+    if (sub === "reset") {
+      audit(player.name, "meta-reset", "eco", "сброс конфига экономики");
+      return metaResetConfig();
+    }
+    if (sub === "set") {
+      const path = args[1];
+      const value = args[2];
+      if (!path || value === undefined) return "использование: /sw:meta set transferFeePercent 5";
+      const result = metaChangeParam(path, value);
+      return result.message;
+    }
+    return "подкоманды: status, info, tx, flush, set, reset";
+  });
+
   register(event, "sw:ac", "Античит: show | set <путь> <значение> | reset", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "show";
@@ -124,5 +186,8 @@ export const registerCommands = (event: StartupEvent): void => {
     return "подкоманды: status, next, list, start <id>, stop";
   });
 
-  log.info("commands", "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac, sw:event");
+  log.info(
+    "commands",
+    "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac, sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest, sw:don, sw:meta",
+  );
 };

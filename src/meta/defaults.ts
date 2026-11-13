@@ -1,0 +1,43 @@
+import type { ClansIndex, PlayerMeta } from "../types/domain";
+
+export const createPlayerMeta = (name: string): PlayerMeta => ({
+  name,
+  updatedAt: Date.now(),
+  joinedAt: Date.now(),
+  playSeconds: 0,
+  banned: false,
+  coins: 0,
+  lockedCoins: 0,
+  lockedUntil: 0,
+  mintDay: 0,
+  mintToday: 0,
+  receiveDay: 0,
+  receiveToday: 0,
+  pairDay: 0,
+  pair: {},
+  lastTransferAt: 0,
+  soldDay: 0,
+  sold: {},
+  caseKeys: 0,
+  casePulls: 0,
+  pity: 0,
+  hearts: 0,
+  streak: 0,
+  streakBest: 0,
+  pvpKills: 0,
+  pvpDeaths: 0,
+  streakAt: 0,
+  donorTier: "none",
+  donorUntil: 0,
+  dailyDay: 0,
+  dailyStreak: 0,
+  quests: {},
+  claimedQuests: {},
+});
+
+export const emptyClansIndex = (): ClansIndex => ({
+  clanIds: [],
+  byPlayer: {},
+  names: {},
+  totalBytes: 0,
+});

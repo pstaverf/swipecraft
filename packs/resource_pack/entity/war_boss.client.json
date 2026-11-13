@@ -1,0 +1,28 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "swipecraft:war_boss",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/war_boss"
+      },
+      "geometry": {
+        "default": "geometry.swipecraft.war_boss"
+      },
+      "render_controllers": [
+        "controller.render.swipecraft.war_boss"
+      ],
+      "animations": {
+        "move": "animation.swipecraft.war_boss.move"
+      },
+      "animation_controllers": [
+        {
+          "move": "controller.animation.swipecraft.war_boss.move"
+        }
+      ]
+    }
+  }
+}

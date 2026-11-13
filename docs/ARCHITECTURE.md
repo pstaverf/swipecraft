@@ -143,36 +143,48 @@ swipecraft/
 │   │   ├── pending.ts               отложенные награды для офлайн-участников
 │   │   ├── messages.ts              ru/en тексты ивентов через addDict
 │   │   └── impl/                    airdrop, bloodmoon, koth, bossraid, doubleloot, bountyhunt, lifesteal
-│   ├── meta/
-│   │   ├── players.ts               профиль игрока (деньги, киллы, время, ранг, язык)
-│   │   ├── clans.ts                 кланы, инвайты, войны, лидерборд
-│   │   ├── economy.ts               валюта, переводы, анти-инфляция
-│   │   ├── shop.ts                  магазин
-│   │   ├── market.ts                рынок игроков
-│   │   ├── streaks.ts               киллстрики и награды за серии
-│   │   ├── bounties.ts              баунти и охота за головами
-│   │   ├── daily.ts                 ежедневные награды
-│   │   ├── quests.ts                квесты
-│   │   ├── battlepass.ts            сезонный батл-пасс
-│   │   ├── cases.ts                 кейсы, шансы, pity-механика
-│   │   ├── custom-items.ts          выдача и распознавание кастомных предметов
-│   │   ├── ranks.ts                 ранги, префиксы, привилегии
-│   │   └── leaderboards.ts          лидерборды и scoreboard
-│   ├── ui/
-│   │   ├── router.ts                главное меню и навигация между экранами
-│   │   ├── components.ts            хелперы форм: пагинация, подтверждения, иконки
-│   │   └── screens/                 main, clan, shop, market, cases, quests, stats, settings, admin
+│   ├── meta/                        мета-слой (этап 5), см. docs/META.md
+│   │   ├── index.ts                 initMeta: загрузка, подписки afterEvents, фоновые задачи
+│   │   ├── config.ts                ключи DP, экономика, рынок, кланы, кейсы, донат, тюнинги
+│   │   ├── balances.ts              PlayerMeta в одном JSON-документе мира (чанки + dirty-флаги)
+│   │   ├── economy.ts               эмиссия/сжигание, переводы, анти-инфляция, тюнинги, эскроу
+│   │   ├── market.ts                рынок игроков: сериализация стеков, покупка, sweep
+│   │   ├── cases.ts                 кейсы: честные веса, pity, 5-pull, журнал и агрегаты
+│   │   ├── clans.ts                 кланы, роли, инвайты, дом, казна, войны, бюджет хранилища
+│   │   ├── progress.ts              дейлики, квесты, серии, топ-лист, PvP-учёт
+│   │   ├── donations.ts             тарифы, заявки/выдачи, месячные ключи, очередь входа
+│   │   ├── profiles.ts              профиль игрока (язык, телефон/десктоп, сессии)
+│   │   ├── defaults.ts              конструкторы пустых записей (миграции читаются из DP)
+│   │   └── messages.ts              ru/en словари слоя
+│   ├── ui/                          все экраны — формы @minecraft/server-ui, см. docs/META.md
+│   │   ├── menu.ts                  главное меню (кошелёк/рынок/кейсы/клан/прогресс/донат/…)
+│   │   ├── common.ts                репорты, поиск игрока по имени, пагинация, labelIndex
+│   │   ├── economy.ts               кошелёк, перевод, продажа предмета, топы
+│   │   ├── market.ts                просмотр/покупка/выставление/поиск/модерация лотов
+│   │   ├── cases.ts                 список кейсов, шансы, вскрытие
+│   │   ├── clans.ts                 клан: состав, права, доска, дом, казна, войны, топ
+│   │   ├── progress.ts              дейлик, квесты, серии
+│   │   ├── donations.ts             каталог, заявка, админ-решения, очередь
+│   │   ├── admin.ts                 админ-панель (вкладки слоёв)
+│   │   ├── admin-meta.ts            мета-вкладка: экономика, кланы, рынок, кейсы, донат, очередь
+│   │   └── messages.ts              ru/en подписи кнопок и полей
 │   ├── commands/
-│   │   ├── registry.ts              регистрация и роутинг custom commands
-│   │   └── custom/                  sw:rtp, sw:menu, sw:event, sw:admin, sw:clan, sw:pay, sw:spawn
+│   │   └── registry.ts              все custom commands: sw:menu, sw:rtp, sw:admin, sw:ac,
+│   │                                sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest,
+│   │                                sw:don, sw:meta
 │   └── types/
 │       ├── domain.ts                доменные типы (Profile, Clan, EventState, ...)
 │       ├── events.ts                типы шины и детектов
 │       └── env.d.ts                 декларации для сборки
 └── tools/
     ├── build.mjs                    esbuild: src/main.ts → packs/behavior_pack/scripts/main.js
-    ├── package-pack.mjs             упаковка BP+RP в .mcpack/.mcaddon
-    └── validate.mjs                 валидация manifest.json, JSON паков, версий API
+    ├── package-pack.mjs             упаковка BP+RP в .mcpack/.mcaddon (addon = обе папки в подпапках)
+    ├── gen-textures.mjs             синтез текстур ресурспака (PNG без внешних зависимостей)
+    └── stability/                   headless-харнесс стабильности (мок @minecraft/server)
+        ├── mock-server.mjs          мир, игроки, сущности, контейнеры, time-patch, фейки событий
+        ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
+        ├── build.mjs                esbuild бандла с external-шимами на моки
+        └── run.mjs                  44 проверки boot/economy/market/cases/clans/progress/donate/queue/events/storage
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -251,7 +263,18 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 |---|---|
 | 1 | `docs/ARCHITECTURE.md`, `docs/HOSTING.md` |
 | 2 | `deploy/*`, `config/server.properties`, `tools/build.mjs`, `src/main.ts`, `src/kernel/*`, `src/bootstrap/*` |
-| 3 | `src/world/*`, `src/security/*`, `src/meta/players.ts`, `src/meta/economy.ts` (база) |
+| 3 | `src/world/*`, `src/security/*`, `src/meta/profiles.ts`, `src/meta/balances.ts`, база `src/meta/economy.ts` — готово |
 | 4 | `src/events/*`, `src/commands/registry.ts` (sw:event), `src/ui/admin.ts` (Ивенты) — готово |
-| 5 | `src/meta/*`, `src/ui/*`, `src/commands/custom/*`, `packs/behavior_pack/items/*` |
+| 5 | `src/meta/*`, `src/ui/*`, `tools/stability/*`, `packs/behavior_pack/entities/war_boss.json`, ресурспак босса — **готово** |
 | 6 | `docs/GROWTH.md`, донат-модуль поверх `ranks.ts`/`cases.ts` |
+
+Отступления этапа 5 от плана — намеренные, каждая причина в doc-файле:
+
+| План | Как сделал | Почему |
+|---|---|---|
+| `shop.ts` (магазин) | продажи предметов в `economy.ts` + рынок игроков | фиксированный магазин = постоянный источник дюпа и ценовых арбитражей; игрок продаёт то, что нафармил |
+| `bounties.ts`, `streaks.ts` отдельно | `progress.ts` (серии, квесты, дейлики, топ) | у всего один носитель состояния — `PlayerMeta`; отдельные файлы = рассинхрон записей |
+| `battlepass.ts`, `ranks.ts` | не сделано, перенесено на этап 6 | сезонный контент без живого сервера — гадание; донат-тариф уже даёт то, для чего задумывались `ranks.ts` |
+| `src/commands/custom/*` | все команды в `commands/registry.ts` | 12 команд, у всех один префикс `sw:`; дробление по файлам добавило бы 10 файлов по 15 строк |
+| `packs/behavior_pack/items/*` (кейс как предмет) | ключей-предметов нет, ключи — число в кошельке | `minecraft:item` в BP без ресурспака не рендерится, а предмет-ключ = дюп через дроп и через рынок |
+| `ui/router.ts` + `screens/` | `ui/menu.ts` + по файлу на домен | «роутер» из 30 строк на 11 экранах только скрывал переходы; каждый экран сам решает, куда вести |

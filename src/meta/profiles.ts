@@ -31,6 +31,7 @@ export const getProfile = (player: Player): Profile => {
   if (cached) return cached;
   const stored = loadPlayerJson<Profile | undefined>(player, `${STORE_KEYS.profilePrefix}${player.id}`, undefined);
   const profile = stored ? { ...createProfile(player), ...stored } : createProfile(player);
+  profile.name = player.name;
   profile.mobile = isMobile(player);
   cache.set(player.id, profile);
   sessionStart.set(player.id, Date.now());

@@ -15,7 +15,7 @@ import { bossraidEvent } from "./impl/bossraid";
 import { bountyhuntEvent } from "./impl/bountyhunt";
 import { doublelootEvent } from "./impl/doubleloot";
 import { kothEvent } from "./impl/koth";
-import { lifestealEvent } from "./impl/lifesteal";
+import { initLifestealGuard, lifestealEvent } from "./impl/lifesteal";
 import { flushPendingFor, loadPending, pendingCount, pendingQueue } from "./pending";
 import type { ActiveEvent, EventHandler, EventId, FinishReason, PersistentEvents } from "./types";
 
@@ -315,6 +315,7 @@ export const initEvents = (): void => {
     }
   });
   registerTask("events-scheduler", 20, 5, () => tickEvents(Date.now()));
+  initLifestealGuard();
   log.info("events", `инициализировано, план: ${state.planned}, активен: ${state.active?.id ?? "нет"}`);
 };
 

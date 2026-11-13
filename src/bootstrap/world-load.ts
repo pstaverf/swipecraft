@@ -6,6 +6,7 @@ import { initAntiDupe } from "../security/antidupe";
 import { initAnticheat, resetState } from "../security/anticheat";
 import { flushAudit, initAudit } from "../security/audit";
 import { initEvents } from "../events/manager";
+import { initMeta } from "../meta/index";
 import { initBorder } from "../world/border";
 import { initLimits } from "../world/limits";
 import { applyWorldRules } from "../world/rules";
@@ -27,6 +28,7 @@ const boot = (): void => {
   initLimits();
   initAntiDupe();
   initAnticheat();
+  initMeta();
   initEvents();
 
   registerProfileTasks(registerTask);

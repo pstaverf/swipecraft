@@ -11,6 +11,8 @@ import { audit, auditReport, recentAudit } from "../security/audit";
 import { borderInfo, borderRadius } from "../world/border";
 import { armWipe, disarmWipe, getSeason, seasonStatus } from "../world/season";
 import { isAdmin, openMenu } from "./menu";
+import { openMetaAdmin } from "./admin-meta";
+import "./messages";
 import { EVENT_IDS, eventName, eventsStatus, startEvent, stopEvent } from "../events/manager";
 
 const DETECTORS = ["reach", "attackRate", "speed", "fly", "nuke", "placeRate", "containerSpam", "entitySpam", "stackAnomaly"];
@@ -63,6 +65,7 @@ export const openAdminPanel = async (player: Player): Promise<void> => {
       .button(t(player, "admin.season"))
       .button(t(player, "admin.border"))
       .button(t(player, "admin.events"))
+      .button(t(player, "ui.admin.meta"))
       .button(t(player, "admin.modules"))
       .button(t(player, "common.back"));
 
@@ -92,6 +95,9 @@ export const openAdminPanel = async (player: Player): Promise<void> => {
         await openEvents(player);
         return;
       case 7:
+        await openMetaAdmin(player);
+        return;
+      case 8:
         await openModules(player);
         return;
       default:

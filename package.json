@@ -8,7 +8,8 @@
     "build": "node tools/build.mjs",
     "watch": "node tools/build.mjs --watch",
     "check": "tsc --noEmit",
-    "pack": "node tools/build.mjs && node tools/package-pack.mjs"
+    "pack": "node tools/build.mjs && node tools/package-pack.mjs",
+    "stability": "node tools/stability/build.mjs && node tools/stability/run.mjs"
   },
   "devDependencies": {
     "@minecraft/server": "2.11.0",
