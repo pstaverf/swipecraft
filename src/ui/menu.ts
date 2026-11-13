@@ -12,13 +12,14 @@ import { openCases } from "./cases";
 import { openClan } from "./clans";
 import { openProgress } from "./progress";
 import { openDonate } from "./donations";
+import { openCosmetics, openReferral } from "./referrals";
 import "./messages";
 
 export const isAdmin = (player: Player): boolean => player.hasTag("admin");
 
 export const openMenu = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:menu", async () => {
-    const actions = ["wallet", "market", "cases", "clan", "progress", "donate", "rtp", "rules", "stats", "lang"];
+    const actions = ["wallet", "market", "cases", "clan", "progress", "donate", "cosmetics", "ref", "rtp", "rules", "stats", "lang"];
     if (isAdmin(player)) actions.push("admin");
     actions.push("close");
 
@@ -31,6 +32,8 @@ export const openMenu = async (player: Player): Promise<void> => {
       .button(t(player, "ui.clan"))
       .button(t(player, "ui.progress"))
       .button(t(player, "ui.donate"))
+      .button(t(player, "ui.cosmetics"))
+      .button(t(player, "ui.ref"))
       .button(t(player, "menu.rtp"))
       .button(t(player, "menu.rules"))
       .button(t(player, "menu.stats"))
@@ -60,6 +63,12 @@ export const openMenu = async (player: Player): Promise<void> => {
         return;
       case "donate":
         await openDonate(player);
+        return;
+      case "cosmetics":
+        await openCosmetics(player);
+        return;
+      case "ref":
+        await openReferral(player);
         return;
       case "rtp": {
         const result = randomTeleport(player);

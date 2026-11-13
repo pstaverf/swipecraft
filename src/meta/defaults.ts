@@ -33,6 +33,17 @@ export const createPlayerMeta = (name: string): PlayerMeta => ({
   dailyStreak: 0,
   quests: {},
   claimedQuests: {},
+  cosmetics: { owned: [], rolls: 0, equipped: { trail: "", prefix: "", suffix: "", join: "" } },
+  refCode: "",
+  refBy: "",
+  refBoundAt: 0,
+  refRewarded: false,
+  refDay: 0,
+  refToday: 0,
+  refMonth: 0,
+  refMonthCoins: 0,
+  donBlockUntil: 0,
+  donBlockReason: "",
 });
 
 export const emptyClansIndex = (): ClansIndex => ({

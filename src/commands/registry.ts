@@ -20,6 +20,7 @@ import { openCases } from "../ui/cases";
 import { openClan } from "../ui/clans";
 import { openProgress } from "../ui/progress";
 import { openDonate } from "../ui/donations";
+import { openCosmetics, openReferral } from "../ui/referrals";
 import { metaAdminLines, metaChangeParam, metaFlush, metaResetConfig, metaStatusLines, metaTxLines } from "../meta/index";
 import { EVENT_IDS, eventName, eventsStatus, isEventId, nextEvent, startEvent, stopEvent } from "../events/manager";
 import { formatDuration } from "../kernel/util";
@@ -125,6 +126,16 @@ export const registerCommands = (event: StartupEvent): void => {
     return "";
   });
 
+  register(event, "sw:shop", "Косметика: каталог, покупка за ₡, экипировка", CommandPermissionLevel.Any, async (player) => {
+    await openCosmetics(player);
+    return "";
+  });
+
+  register(event, "sw:ref", "Приглашения: мой код и ввод кода", CommandPermissionLevel.Any, async (player) => {
+    await openReferral(player);
+    return "";
+  });
+
   register(event, "sw:meta", "Мета-слой: status | flush | tx | set <параметр> <число> | reset", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "status";
@@ -188,6 +199,6 @@ export const registerCommands = (event: StartupEvent): void => {
 
   log.info(
     "commands",
-    "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac, sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest, sw:don, sw:meta",
+    "зарегистрированы sw:menu, sw:rtp, sw:admin, sw:ac, sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest, sw:don, sw:shop, sw:ref, sw:meta",
   );
 };

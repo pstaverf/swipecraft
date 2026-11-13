@@ -8,20 +8,28 @@ import { busyNote, labelIndex, numOf, onlinePlayers, report } from "./common";
 import {
   applyTier,
   catalogLines,
+  clearDispute,
   decideRequest,
+  disputeLines,
   donorDaysLeft,
   donorReport,
   donorTiers,
+  goalLines,
+  goalState,
   grantLines,
+  markDispute,
   openRequests,
   queueReport,
   releaseAll,
   requestLines,
   revokeTier,
+  setGoal,
   submitRequest,
   tierInfo,
   tierOf,
 } from "../meta/donations";
+import { cosmeticCatalog, grantCosmetic, purchaseHistory, receiptsCount } from "../meta/cosmetics";
+import { referralReport, resetBinding, topReferrers } from "../meta/referrals";
 import { openMetaAdmin } from "./admin-meta";
 import { openMenu } from "./menu";
 
@@ -58,7 +66,7 @@ const openApply = async (player: Player, tier: DonorTier): Promise<void> => {
 export const openDonate = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:donate", async () => {
     const tiers = donorTiers().filter((row) => row !== "none");
-    const actions = [...tiers, "log", "menu"];
+    const actions = [...tiers, "log", "history", "menu"];
     const myRequests = openRequests().filter((row) => row.playerId === player.id);
     const form = new ActionFormData()
       .title(t(player, "ui.donate"))
@@ -68,6 +76,7 @@ export const openDonate = async (player: Player): Promise<void> => {
       form.button(`${tier} · ${info.price} ${DONATIONS.currency} · ${info.days} ${t(player, "ui.days")}`);
     }
     form.button(t(player, "ui.donate.log"));
+    form.button(t(player, "cos.history.button"));
     form.button(t(player, "ui.menu"));
 
     const response = await form.show(player);
@@ -81,6 +90,10 @@ export const openDonate = async (player: Player): Promise<void> => {
       if (lines.length === 0) lines.push(t(player, "ui.pick.none"));
       lines.push(t(player, "don.you", { tier: tierOf(player), days: donorDaysLeft(player), keys: 0 }));
       player.sendMessage(lines.join("\n"));
+      return;
+    }
+    if (action === "history") {
+      player.sendMessage([...purchaseHistory(player), ...goalLines(player)].join("\n").slice(0, 900));
       return;
     }
     if (action === "menu" || action === undefined) {
@@ -200,7 +213,7 @@ const openDonGrant = async (player: Player): Promise<void> => {
 
 export const openDonAdmin = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:don:admin", async () => {
-    const actions = ["requests", "grant", "revoke", "log", "queue", "release", "back"];
+    const actions = ["requests", "grant", "revoke", "log", "queue", "release", "goal", "dispute", "cosmetic", "referrals", "back"];
     const form = new ActionFormData()
       .title(t(player, "ui.admin.don"))
       .body([...donorReport(), ...queueReport()].join("\n").slice(0, 1800))
@@ -210,6 +223,10 @@ export const openDonAdmin = async (player: Player): Promise<void> => {
       .button(t(player, "ui.admin.don.log"))
       .button(t(player, "ui.admin.queue"))
       .button(t(player, "ui.admin.queue.release"))
+      .button(t(player, "cos.goal.button"))
+      .button(t(player, "cos.dispute.button"))
+      .button(t(player, "cos.grant.button"))
+      .button(t(player, "cos.log.button"))
       .button(t(player, "ui.admin.meta"));
     const response = await form.show(player);
     if (response.canceled || response.selection === undefined) {
@@ -237,8 +254,129 @@ export const openDonAdmin = async (player: Player): Promise<void> => {
       case "release":
         player.sendMessage(t(player, "ui.admin.queue.released", { count: releaseAll() }));
         return;
+      case "goal":
+        await openDonGoal(player);
+        return;
+      case "dispute":
+        await openDonDispute(player);
+        return;
+      case "cosmetic":
+        await openCosmeticGrant(player);
+        return;
+      case "referrals":
+        player.sendMessage([...referralReport(), ...topReferrers()].join("\n").slice(0, 1500));
+        return;
       default:
         await openMetaAdmin(player);
     }
+  });
+};
+
+
+const openDonGoal = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:don:goal", async () => {
+    const actions = ["set", "close", "back"];
+    const state = goalState();
+    const form = new ActionFormData()
+      .title(t(player, "cos.goal.button"))
+      .body([...goalLines(player), `поднято: ${state.raised} ${DONATIONS.currency}`, `чеков: ${receiptsCount()}`].join("\n"))
+      .button(t(player, "cos.goal.set"))
+      .button(t(player, "cos.goal.close"))
+      .button(t(player, "common.back"));
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) {
+      busyNote(player, response);
+      return;
+    }
+    const action = actions[response.selection];
+    if (action === "close") {
+      player.sendMessage(setGoal(player.name, "", 0, 0));
+      return;
+    }
+    if (action === "back") {
+      await openDonAdmin(player);
+      return;
+    }
+    const modal = new ModalFormData()
+      .title(t(player, "cos.goal.set"))
+      .textField(t(player, "cos.goal.label"), "Хостинг на месяц", { defaultValue: "" })
+      .textField(t(player, "cos.goal.target"), "3000", { defaultValue: "3000" })
+      .textField(t(player, "cos.goal.days"), "30", { defaultValue: "30" })
+      .submitButton(t(player, "ui.confirm"));
+    const filled = await modal.show(player);
+    if (filled.canceled || !filled.formValues) {
+      busyNote(player, filled);
+      return;
+    }
+    const values = filled.formValues as unknown[];
+    const label = String(values[0] ?? "").slice(0, 60);
+    const target = numOf(values[1], 0);
+    const days = numOf(values[2], 30);
+    player.sendMessage(setGoal(player.name, label, target, days));
+  });
+};
+
+const openDonDispute = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:don:dispute", async () => {
+    const candidates = onlinePlayers();
+    if (candidates.length === 0) {
+      player.sendMessage(t(player, "ui.pick.none"));
+      return;
+    }
+    const form = new ActionFormData()
+      .title(t(player, "cos.dispute.button"))
+      .body(disputeLines().join("\n").slice(0, 1200));
+    for (const row of candidates) form.button(`${row.name} · ${tierOf(row)}`);
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) {
+      busyNote(player, response);
+      return;
+    }
+    const target = candidates[response.selection];
+    if (!target) return;
+    const modal = new ModalFormData()
+      .title(`${t(player, "cos.dispute.button")}: ${target.name}`)
+      .textField(t(player, "cos.dispute.reason"), "chargeback / ID платежа", { defaultValue: "" })
+      .toggle(t(player, "cos.dispute.clear"), { defaultValue: false })
+      .submitButton(t(player, "ui.confirm"));
+    const filled = await modal.show(player);
+    if (filled.canceled || !filled.formValues) {
+      busyNote(player, filled);
+      return;
+    }
+    const values = filled.formValues as unknown[];
+    const reason = String(values[0] ?? "").slice(0, 80);
+    const clear = values[1] === true;
+    player.sendMessage(clear ? clearDispute(player.name, target) : markDispute(player.name, target, reason));
+  });
+};
+
+const openCosmeticGrant = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:don:cosmetic", async () => {
+    const candidates = onlinePlayers();
+    if (candidates.length === 0) {
+      player.sendMessage(t(player, "ui.pick.none"));
+      return;
+    }
+    const who = new ActionFormData().title(t(player, "cos.grant.button"));
+    for (const row of candidates) who.button(row.name);
+    const first = await who.show(player);
+    if (first.canceled || first.selection === undefined) {
+      busyNote(player, first);
+      return;
+    }
+    const target = candidates[first.selection];
+    if (!target) return;
+    const catalog = cosmeticCatalog();
+    const what = new ActionFormData().title(`${t(player, "cos.grant.button")}: ${target.name}`);
+    for (const row of catalog) what.button(`${row.label} · ${row.rarity}`);
+    const second = await what.show(player);
+    if (second.canceled || second.selection === undefined) {
+      busyNote(player, second);
+      return;
+    }
+    const def = catalog[second.selection];
+    if (!def) return;
+    report(player, grantCosmetic(player.name, target, def.id));
   });
 };

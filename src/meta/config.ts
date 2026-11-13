@@ -1,4 +1,4 @@
-import type { CaseDef, CaseId, ClanRole, DonorTier, EcoTunables, Rarity } from "../types/domain";
+import type { CaseDef, CaseId, ClanRole, CosmeticDef, DonorTier, EcoTunables, Rarity } from "../types/domain";
 
 export const META_KEYS = {
   tunables: "sw:eco:cfg",
@@ -14,6 +14,10 @@ export const META_KEYS = {
   donRequests: "sw:don:requests",
   donGrants: "sw:don:grants",
   donUsage: "sw:don:usage",
+  donGoal: "sw:don:goal",
+  donReceipts: "sw:don:receipts",
+  refCodes: "sw:ref:codes",
+  refLog: "sw:ref:log",
 } as const;
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -204,13 +208,14 @@ export const RARITY_COLOR: Record<Rarity, string> = {
 export const DONATIONS = {
   currency: "₽",
   tiers: {
-    none: { price: 0, days: 0, queuePriority: false, prefix: "", particles: false },
+    none: { price: 0, days: 0, queuePriority: false, prefix: "", particles: false, giftRolls: 0 },
     bronze: {
       price: 199,
       days: 30,
       queuePriority: true,
       prefix: "§7[§8бронза§7]§r ",
       particles: false,
+      giftRolls: 1,
     },
     silver: {
       price: 399,
@@ -218,6 +223,7 @@ export const DONATIONS = {
       queuePriority: true,
       prefix: "§f[§7серебро§f]§r ",
       particles: true,
+      giftRolls: 2,
     },
     gold: {
       price: 799,
@@ -225,18 +231,63 @@ export const DONATIONS = {
       queuePriority: true,
       prefix: "§6[§eзолото§6]§r ",
       particles: true,
+      giftRolls: 3,
     },
-  } as Record<DonorTier, { price: number; days: number; queuePriority: boolean; prefix: string; particles: boolean }>,
+  } as Record<DonorTier, { price: number; days: number; queuePriority: boolean; prefix: string; particles: boolean; giftRolls: number }>,
   trailParticle: "swipecraft:donor_trail",
   trailFallbackParticle: "minecraft:basic_smoke_particle",
   trailEveryTicks: 10,
   requestsMax: 80,
   grantsMax: 300,
+  receiptsMax: 120,
   minDays: 7,
   maxDays: 120,
   refundAllowed: false,
-  keysPerMonth: { none: 0, bronze: 2, silver: 5, gold: 10 } as Record<DonorTier, number>,
+  requireNote: true,
+  disputeBlockDays: 30,
+  goal: {
+    rewardCoins: 1200,
+    rewardKeys: 1,
+    ttlDays: 14,
+  },
   priceMultiplierRub: 1,
+} as const;
+
+export const COSMETICS: CosmeticDef[] = [
+  { id: "trail_smoke", kind: "trail", label: "Дым", priceCoins: 1200, weight: 300, rarity: "common", value: "minecraft:basic_smoke_particle" },
+  { id: "trail_ember", kind: "trail", label: "Тлеющие угли", priceCoins: 4000, weight: 160, rarity: "rare", value: "swipecraft:trail_ember" },
+  { id: "trail_frost", kind: "trail", label: "Иней", priceCoins: 4500, weight: 150, rarity: "rare", value: "swipecraft:trail_frost" },
+  { id: "trail_soul", kind: "trail", label: "Души", priceCoins: 11000, weight: 60, rarity: "epic", value: "swipecraft:trail_soul" },
+  { id: "prefix_sword", kind: "prefix", label: "Меч перед именем", priceCoins: 1500, weight: 260, rarity: "common", value: "§c⚔ " },
+  { id: "prefix_crown", kind: "prefix", label: "Корона", priceCoins: 6000, weight: 110, rarity: "rare", value: "§6♛ " },
+  { id: "prefix_star", kind: "prefix", label: "Звезда", priceCoins: 2200, weight: 220, rarity: "common", value: "§b✦ " },
+  { id: "suffix_legend", kind: "suffix", label: "«легенда»", priceCoins: 3000, weight: 180, rarity: "common", value: " §8·§7легенда" },
+  { id: "suffix_thunder", kind: "suffix", label: "«гроза»", priceCoins: 7000, weight: 90, rarity: "epic", value: " §8·§cгроза" },
+  { id: "join_raiders", kind: "join", label: "Заход: «ворвался в анархию»", priceCoins: 2500, weight: 200, rarity: "common", value: "§6» {name} §fворвался в анархию" },
+  { id: "join_shadow", kind: "join", label: "Заход: «тихо вошёл»", priceCoins: 5200, weight: 120, rarity: "rare", value: "§8» {name} §7тихо вошёл" },
+  { id: "join_queue", kind: "join", label: "Заход: «сервер выдохнул»", priceCoins: 16000, weight: 30, rarity: "legendary", value: "§d» {name} §f— сервер выдохнул" },
+];
+
+export const COSMETIC_CASE = {
+  id: "cosmetic",
+  label: "Косметический кейс",
+  priceCoins: 3500,
+  duplicateRefundPercent: 50,
+  maxRollsPerCall: 5,
+} as const;
+
+export const REFERRALS = {
+  codeLength: 6,
+  bindWindowHours: 72,
+  rewardAfterSeconds: 7200,
+  rewardCoinsReferrer: 2500,
+  rewardCoinsReferee: 1000,
+  maxRewardedPerDay: 3,
+  maxCoinsPerMonth: 15000,
+  minReferrerPlaySeconds: 21600,
+  minReferrerAgeDays: 7,
+  logMax: 200,
+  codesMax: 5000,
 } as const;
 
 export const QUEUE = {
@@ -308,6 +359,8 @@ export const META_TASKS = {
   warSettleTicks: 1200,
   queueTicks: 20,
   heartsEnforceTicks: 20,
+  balancesPruneTicks: 21600,
+  balancesPruneInactiveDays: 60,
 } as const;
 
 export const DEFAULT_ECO_TUNABLES: EcoTunables = {

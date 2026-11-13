@@ -143,35 +143,39 @@ swipecraft/
 │   │   ├── pending.ts               отложенные награды для офлайн-участников
 │   │   ├── messages.ts              ru/en тексты ивентов через addDict
 │   │   └── impl/                    airdrop, bloodmoon, koth, bossraid, doubleloot, bountyhunt, lifesteal
-│   ├── meta/                        мета-слой (этап 5), см. docs/META.md
+│   ├── meta/                        мета-слой (этапы 5–6), см. docs/META.md
 │   │   ├── index.ts                 initMeta: загрузка, подписки afterEvents, фоновые задачи
-│   │   ├── config.ts                ключи DP, экономика, рынок, кланы, кейсы, донат, тюнинги
+│   │   ├── config.ts                ключи DP, экономика, рынок, кланы, кейсы, донат,
+│   │   │                                косметика, рефералка, очередь, тюнинги
 │   │   ├── balances.ts              PlayerMeta в одном JSON-документе мира (чанки + dirty-флаги)
 │   │   ├── economy.ts               эмиссия/сжигание, переводы, анти-инфляция, тюнинги, эскроу
 │   │   ├── market.ts                рынок игроков: сериализация стеков, покупка, sweep
 │   │   ├── cases.ts                 кейсы: честные веса, pity, 5-pull, журнал и агрегаты
 │   │   ├── clans.ts                 кланы, роли, инвайты, дом, казна, войны, бюджет хранилища
 │   │   ├── progress.ts              дейлики, квесты, серии, топ-лист, PvP-учёт
-│   │   ├── donations.ts             тарифы, заявки/выдачи, месячные ключи, очередь входа
+│   │   ├── donations.ts             тарифы, заявки/выдачи, споры и цель сбора, очередь входа
+│   │   ├── cosmetics.ts             каталог косметики: покупка за ₡, роллы, nameTag, трейлы, чеки
+│   │   ├── referrals.ts             коды приглашений, привязка, награды после 2 ч игры, журнал
 │   │   ├── profiles.ts              профиль игрока (язык, телефон/десктоп, сессии)
 │   │   ├── defaults.ts              конструкторы пустых записей (миграции читаются из DP)
 │   │   └── messages.ts              ru/en словари слоя
 │   ├── ui/                          все экраны — формы @minecraft/server-ui, см. docs/META.md
-│   │   ├── menu.ts                  главное меню (кошелёк/рынок/кейсы/клан/прогресс/донат/…)
+│   │   ├── menu.ts                  главное меню (кошелёк/рынок/кейсы/клан/прогресс/донат/косметика/…)
 │   │   ├── common.ts                репорты, поиск игрока по имени, пагинация, labelIndex
 │   │   ├── economy.ts               кошелёк, перевод, продажа предмета, топы
 │   │   ├── market.ts                просмотр/покупка/выставление/поиск/модерация лотов
 │   │   ├── cases.ts                 список кейсов, шансы, вскрытие
 │   │   ├── clans.ts                 клан: состав, права, доска, дом, казна, войны, топ
 │   │   ├── progress.ts              дейлик, квесты, серии
-│   │   ├── donations.ts             каталог, заявка, админ-решения, очередь
+│   │   ├── donations.ts             каталог, заявка, админ-решения, очередь, цель/споры
+│   │   ├── referrals.ts             косметика (каталог/покупка/экипировка) и реферальный экран
 │   │   ├── admin.ts                 админ-панель (вкладки слоёв)
 │   │   ├── admin-meta.ts            мета-вкладка: экономика, кланы, рынок, кейсы, донат, очередь
 │   │   └── messages.ts              ru/en подписи кнопок и полей
 │   ├── commands/
 │   │   └── registry.ts              все custom commands: sw:menu, sw:rtp, sw:admin, sw:ac,
 │   │                                sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest,
-│   │                                sw:don, sw:meta
+│   │                                sw:don, sw:shop, sw:ref, sw:meta
 │   └── types/
 │       ├── domain.ts                доменные типы (Profile, Clan, EventState, ...)
 │       ├── events.ts                типы шины и детектов
@@ -184,7 +188,8 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  44 проверки boot/economy/market/cases/clans/progress/donate/queue/events/storage
+        └── run.mjs                  55 проверок: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage + синхронность ru/en
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -266,7 +271,7 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | 3 | `src/world/*`, `src/security/*`, `src/meta/profiles.ts`, `src/meta/balances.ts`, база `src/meta/economy.ts` — готово |
 | 4 | `src/events/*`, `src/commands/registry.ts` (sw:event), `src/ui/admin.ts` (Ивенты) — готово |
 | 5 | `src/meta/*`, `src/ui/*`, `tools/stability/*`, `packs/behavior_pack/entities/war_boss.json`, ресурспак босса — **готово** |
-| 6 | `docs/GROWTH.md`, донат-модуль поверх `ranks.ts`/`cases.ts` |
+| 6 | `src/meta/cosmetics.ts`, `src/meta/referrals.ts`, `src/ui/referrals.ts`, цель сбора и споры в `src/meta/donations.ts`, `packs/resource_pack/particles/trail_*.json`, `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` — **готово** |
 
 Отступления этапа 5 от плана — намеренные, каждая причина в doc-файле:
 
@@ -274,7 +279,9 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 |---|---|---|
 | `shop.ts` (магазин) | продажи предметов в `economy.ts` + рынок игроков | фиксированный магазин = постоянный источник дюпа и ценовых арбитражей; игрок продаёт то, что нафармил |
 | `bounties.ts`, `streaks.ts` отдельно | `progress.ts` (серии, квесты, дейлики, топ) | у всего один носитель состояния — `PlayerMeta`; отдельные файлы = рассинхрон записей |
-| `battlepass.ts`, `ranks.ts` | не сделано, перенесено на этап 6 | сезонный контент без живого сервера — гадание; донат-тариф уже даёт то, для чего задумывались `ranks.ts` |
-| `src/commands/custom/*` | все команды в `commands/registry.ts` | 12 команд, у всех один префикс `sw:`; дробление по файлам добавило бы 10 файлов по 15 строк |
+| `battlepass.ts`, `ranks.ts` | `ranks.ts` не заведён: тариф живёт в `donations.ts` (`donorTier`/`donorUntil`), battle pass отложен | сезонный контент без живого сервера — гадание; донат-тариф уже даёт то, для чего задумывались `ranks.ts` |
+| `src/commands/custom/*` | все команды в `commands/registry.ts` | 14 команд, у всех один префикс `sw:`; дробление по файлам добавило бы 10 файлов по 15 строк |
 | `packs/behavior_pack/items/*` (кейс как предмет) | ключей-предметов нет, ключи — число в кошельке | `minecraft:item` в BP без ресурспака не рендерится, а предмет-ключ = дюп через дроп и через рынок |
+| «автовыдача доната по вебхуку» | только ручная выдача: `applyTier` из одобрения заявки или из «Выдать вручную» | на BDS нет приёма платежей, вебхук = дыра «выдай себе тариф»; детали — `docs/MONETIZATION.md` §2 |
+| отдельный `src/ui/cosmetics.ts` + `src/ui/referrals.ts` | один файл `src/ui/referrals.ts` на оба экрана | 12 позиций каталога и 4 слота экипировки не требуют второго модуля; логика вся равно в `src/meta/*` |
 | `ui/router.ts` + `screens/` | `ui/menu.ts` + по файлу на домен | «роутер» из 30 строк на 11 экранах только скрывал переходы; каждый экран сам решает, куда вести |

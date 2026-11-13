@@ -96,6 +96,9 @@ const boss = solid(64, 64, (x, y) => {
 
 const aura = radial(16, [232, 66, 54], 1.6);
 const trail = radial(16, [246, 208, 108], 1.4);
+const ember = radial(16, [255, 132, 44], 1.25);
+const frost = radial(16, [150, 226, 255], 1.9);
+const soul = radial(16, [120, 255, 196], 1.5);
 const icon = solid(64, 64, (x, y) => {
   const border = x < 3 || y < 3 || x > 60 || y > 60;
   if (border) return [236, 196, 96, 255];
@@ -108,6 +111,9 @@ const targets = [
   ["packs/resource_pack/textures/entity/war_boss.png", boss, 64, 64],
   ["packs/resource_pack/textures/particles/boss_aura.png", aura, 16, 16],
   ["packs/resource_pack/textures/particles/donor_trail.png", trail, 16, 16],
+  ["packs/resource_pack/textures/particles/trail_ember.png", ember, 16, 16],
+  ["packs/resource_pack/textures/particles/trail_frost.png", frost, 16, 16],
+  ["packs/resource_pack/textures/particles/trail_soul.png", soul, 16, 16],
 ];
 
 for (const [relative, pixels, width, height] of targets) {

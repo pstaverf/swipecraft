@@ -126,6 +126,17 @@ export interface PlayerMeta {
   dailyStreak: number;
   quests: Record<string, number>;
   claimedQuests: Record<string, number>;
+  cosmetics: CosmeticState;
+  refCode: string;
+  refBy: string;
+  refBoundAt: number;
+  refRewarded: boolean;
+  refDay: number;
+  refToday: number;
+  refMonth: number;
+  refMonthCoins: number;
+  donBlockUntil: number;
+  donBlockReason: string;
 }
 
 export interface EcoTunables {
@@ -283,6 +294,56 @@ export interface DonationRequest {
   note: string;
   at: number;
   status: "open" | "approved" | "rejected";
+  by: string;
+}
+
+export type CosmeticKind = "trail" | "prefix" | "suffix" | "join";
+
+export interface CosmeticDef {
+  id: string;
+  kind: CosmeticKind;
+  label: string;
+  priceCoins: number;
+  weight: number;
+  rarity: Rarity;
+  value: string;
+}
+
+export interface CosmeticState {
+  owned: string[];
+  rolls: number;
+  equipped: Record<CosmeticKind, string>;
+}
+
+export interface ReferralRow {
+  code: string;
+  playerId: string;
+  name: string;
+}
+
+export interface ReferralLogRow {
+  t: number;
+  kind: "bind" | "reward" | "reject" | "reset";
+  referrer: string;
+  referee: string;
+  detail: string;
+}
+
+export interface DonationGoal {
+  label: string;
+  target: number;
+  raised: number;
+  deadline: number;
+  paidAt: number;
+}
+
+export interface ReceiptRow {
+  t: number;
+  playerId: string;
+  name: string;
+  item: string;
+  via: "coins" | "roll" | "gift" | "donate" | "refund";
+  amount: number;
   by: string;
 }
 

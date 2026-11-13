@@ -93,10 +93,13 @@ const recordTx = (from: string, to: string, amount: number, fee: number, kind: s
   ledgerDirty = true;
 };
 
-export const mint = (player: Player, amount: number, reason: string): MoneyResult => {
+export const mint = (player: Player, amount: number, reason: string): MoneyResult =>
+  mintToId(player.id, player.name, amount, reason);
+
+export const mintToId = (playerId: string, playerName: string, amount: number, reason: string): MoneyResult => {
   const clean = Math.floor(amount);
   if (!Number.isFinite(clean) || clean <= 0) return { ok: false, key: "eco.amount.invalid" };
-  const meta = metaOf(player);
+  const meta = getMeta(playerId, playerName);
   resetDaily(meta);
   const day = today();
   if (ledger.day !== day) {
@@ -107,7 +110,7 @@ export const mint = (player: Player, amount: number, reason: string): MoneyResul
   if (left <= 0) return { ok: false, key: "eco.mint.capped" };
   const granted = Math.min(clean, left);
   if (meta.coins + granted > CURRENCY.maxBalance) {
-    markDirty(player.id);
+    markDirty(playerId);
     persist();
     return { ok: false, key: "eco.balance.max", params: { max: CURRENCY.maxBalance } };
   }
@@ -117,9 +120,9 @@ export const mint = (player: Player, amount: number, reason: string): MoneyResul
   ledger.minted += granted;
   ledger.mintToday += granted;
   ledgerDirty = true;
-  markDirty(player.id);
+  markDirty(playerId);
   persist();
-  audit("economy", "mint", player.name, `${granted} ${reason}`);
+  audit("economy", "mint", meta.name, `${granted} ${reason}`);
   if (granted < clean) return { ok: true, key: "eco.mint.partial", params: { granted, asked: clean, cap: tunables.mintCapPerDay } };
   return { ok: true, key: "eco.mint.ok", params: { amount: granted } };
 };
@@ -140,6 +143,23 @@ export const burn = (player: Player, amount: number, reason: string): MoneyResul
 };
 
 export const spend = (player: Player, amount: number, reason: string): MoneyResult => burn(player, amount, reason);
+
+export const refundBurn = (player: Player, amount: number, reason: string): MoneyResult => {
+  const clean = Math.floor(amount);
+  if (!Number.isFinite(clean) || clean <= 0) return { ok: false, key: "eco.amount.invalid" };
+  const meta = metaOf(player);
+  const target = Math.min(CURRENCY.maxBalance, meta.coins + clean);
+  const credited = target - meta.coins;
+  if (credited <= 0) return { ok: false, key: "eco.balance.max", params: { max: CURRENCY.maxBalance } };
+  meta.coins = target;
+  meta.updatedAt = Date.now();
+  ledger.burned = Math.max(0, ledger.burned - credited);
+  ledgerDirty = true;
+  markDirty(player.id);
+  persist();
+  audit("economy", "refund", meta.name, `${credited} ${reason}`);
+  return { ok: true, key: "eco.refund.ok", params: { amount: credited } };
+};
 
 export const accountBalance = (accountId: string): number => ledger.accounts[accountId]?.coins ?? 0;
 

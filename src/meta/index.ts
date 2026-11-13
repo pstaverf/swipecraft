@@ -3,14 +3,17 @@ import { log } from "../kernel/logger";
 import { registerTask } from "../kernel/ticker";
 import { audit, notifyAdmins } from "../security/audit";
 import { grantGrace } from "../security/anticheat";
-import { flushBalances, loadBalances, metaCount, balancesReport } from "./balances";
+import { flushBalances, loadBalances, metaCount, balancesReport, pruneBalances } from "./balances";
 import { CASES, DONATIONS, LEADERBOARD, MARKET, META_TASKS } from "./config";
 import { changeEcoParam, ecoSummary, flushEconomy, initEconomy, resetEcoConfig, txReport, unlockSweep } from "./economy";
 import { claimExpiredFor, flushMarket, loadMarket, marketStats, sweepMarket } from "./market";
 import { caseStatsLines, flushCases, loadCases, recentCaseLog } from "./cases";
 import { clanCacheStats, flushClans, loadClans, onPvpKill, pruneClans, settleWars, storageReport, syncMembers, clanOf } from "./clans";
-import { autoGrantKeys, flushDonations, loadDonations, queueOnSpawn, queueTick, refreshNameTag, trailSweep, unqueue } from "./donations";
+import { autoGrantGift, flushDonations, loadDonations, queueOnSpawn, queueTick, refreshNameTag, trailSweep, unqueue } from "./donations";
 import { flushProgress, isOre, loadProgress, recordDeath, recordKill, recordMobKill, recordOre, setClanTag, streakDecay, updateTopRow } from "./progress";
+import { flushCosmetics, announceJoin, loadCosmetics } from "./cosmetics";
+import { codeOf, flushReferrals, loadReferrals, referralReport, rewardSweep } from "./referrals";
+import { disputeLines, goalReport } from "./donations";
 import "./messages";
 
 let initialized = false;
@@ -25,8 +28,10 @@ const safeStep = (scope: string, fn: () => void): void => {
 
 const onSpawn = (player: Player): void => {
   safeStep("meta:spawn", () => {
-    autoGrantKeys(player);
+    autoGrantGift(player);
+    codeOf(player);
     refreshNameTag(player);
+    announceJoin(player);
     updateTopRow(player);
     const doc = clanOf(player.id);
     if (doc) setClanTag(player.id, doc.name);
@@ -61,6 +66,8 @@ const flushAll = (): void => {
   flushClans();
   flushProgress();
   flushDonations();
+  flushCosmetics();
+  flushReferrals();
 };
 
 export const initMeta = (): void => {
@@ -71,9 +78,14 @@ export const initMeta = (): void => {
   const marketRows = loadMarket();
   loadCases();
   loadDonations();
+  loadCosmetics();
+  const refCodes = loadReferrals();
   const clans = loadClans();
   loadProgress();
-  log.info("meta", `записей игроков: ${records}, объявлений: ${marketRows}, кланов: ${clans}, кейсов: ${Object.keys(CASES).length}`);
+  log.info(
+    "meta",
+    `записей игроков: ${records}, объявлений: ${marketRows}, кланов: ${clans}, кейсов: ${Object.keys(CASES).length}, кодов приглашений: ${refCodes}`,
+  );
 
   world.afterEvents.playerSpawn.subscribe((event) => {
     if (!event.initialSpawn) return;
@@ -103,7 +115,7 @@ export const initMeta = (): void => {
 
   registerTask("meta-unlock", 200, 4, () => {
     unlockSweep();
-    for (const player of world.getAllPlayers()) autoGrantKeys(player);
+    for (const player of world.getAllPlayers()) autoGrantGift(player);
   });
 
   registerTask("meta-flush", META_TASKS.economyFlushTicks, 20, () => {
@@ -125,6 +137,11 @@ export const initMeta = (): void => {
     if (metaCount() > 0 && Math.random() < 0.05) pruneClans();
   });
 
+  registerTask("meta-prune", META_TASKS.balancesPruneTicks, 6, () => {
+    const removed = pruneBalances(META_TASKS.balancesPruneInactiveDays);
+    if (removed > 0) log.info("meta", `кошельков убрано за неактивность: ${removed}`);
+  });
+
   registerTask("meta-donor", DONATIONS.trailEveryTicks, 3, () => {
     trailSweep();
   });
@@ -135,6 +152,10 @@ export const initMeta = (): void => {
 
   registerTask("meta-streaks", 600, 3, () => {
     streakDecay();
+  });
+
+  registerTask("meta-ref", 600, 4, () => {
+    rewardSweep();
   });
 
   registerTask("meta-leaderboard", LEADERBOARD.flushTicks, 6, () => {
@@ -158,6 +179,8 @@ export const metaStatusLines = (): string[] => [
   ...marketStats(),
   ...balancesReport(),
   ...storageReport(),
+  ...goalReport(),
+  ...referralReport().slice(0, 2),
 ];
 
 export const metaAdminLines = (): string[] => [
@@ -170,6 +193,11 @@ export const metaAdminLines = (): string[] => [
   "кланы:",
   ...storageReport().slice(0, 4),
   `кэш документов: ${clanCacheStats().docs}, грязных ${clanCacheStats().dirty}`,
+  "донат:",
+  ...goalReport(),
+  ...disputeLines().slice(0, 3),
+  "приглашения:",
+  ...referralReport().slice(0, 5),
 ];
 
 export const metaTxLines = (count: number): string[] => txReport(count);

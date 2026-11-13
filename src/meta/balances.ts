@@ -111,6 +111,10 @@ export const balancesReport = (): string[] => {
   ];
 };
 
-export const allMeta = (): PlayerMeta[] => [...cache.values()];
+export const allMeta = (): Record<string, PlayerMeta> => {
+  const data: Record<string, PlayerMeta> = {};
+  for (const [id, record] of cache) data[id] = record;
+  return data;
+};
 
 export const metaCount = (): number => cache.size;

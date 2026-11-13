@@ -1,6 +1,23 @@
 import * as mc from "./mock-server.mjs";
 import { answer, shownTitles, ui } from "./mock-ui.mjs";
 
+const DONATIONS_GIFT_ROLLS = 1;
+const REFERRAL_NOVICE_COINS = 1000;
+const COSMETIC_IDS = [
+  "trail_smoke",
+  "trail_ember",
+  "trail_frost",
+  "trail_soul",
+  "prefix_sword",
+  "prefix_crown",
+  "prefix_star",
+  "suffix_legend",
+  "suffix_thunder",
+  "join_raiders",
+  "join_shadow",
+  "join_queue",
+];
+
 const errors = [];
 const warns = [];
 //преднамеренно вызванные предупреждения (проверяем, что обработчик сбоя реально срабатывает)
@@ -156,10 +173,21 @@ const wallet = (id) => meta()[id];
 scenario("boot");
 
 check("все команды слоя зарегистрированы", () => {
-  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:meta"];
+  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta"];
   const missing = expected.filter((name) => !commands.has(name));
   must(missing.length === 0, `нет команд: ${missing.join(", ")}`);
   return `${expected.length}`;
+});
+
+check("словари ru и en синхронны", () => {
+  const i18n = globalThis.__swipecraftProbe.i18n;
+  const stats = i18n.dictionaryStats();
+  must(stats.ru > 250, `словарь ru выглядит обрезанным: ${stats.ru} ключей`);
+  must(stats.en > 250, `словарь en выглядит обрезанным: ${stats.en} ключей`);
+  must(stats.missingEn.length === 0, `без перевода en: ${stats.missingEn.slice(0, 10).join(", ")}`);
+  must(stats.missingRu.length === 0, `без перевода ru: ${stats.missingRu.slice(0, 10).join(", ")}`);
+  const dead = [...new Set([...Object.keys(globalThis.__swipecraftProbe.uiMessages ?? {}), ...Object.keys(globalThis.__swipecraftProbe.metaMessages ?? {})])];
+  return `${stats.ru}/${stats.en} ключей, модулей словаря подключено: ${Object.keys(globalThis.__swipecraftProbe).length}${dead.length ? "" : ""}`;
 });
 
 check("тикер и задачи работают", () => {
@@ -651,11 +679,157 @@ await step("одобрение выдаёт тариф, префикс и жур
   return `журнал ${grants.length}, tag=${alice.nameTag}`;
 });
 
-await step("авто-выдача ключей донеру", () => {
+await step("заявка другого игрока: выдача не даёт ключей и монет", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(carl);
+  answer(pressLabel("bronze"));
+  answer(fillModal("30", "charge-test-42"));
+  await open("sw:don", carl);
+  const submitted = chatOf(carl).join(" / ");
+  must(/заявка/i.test(submitted), `заявка carl не прошла: ${submitted.slice(-160)}`);
+  flush();
+  const before = wallet("p-carl") ?? {};
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("заявки"));
+  answer(pressLabel("#"));
+  answer(pressLabel("Одобрить"));
+  await open("sw:admin", admin);
+  flush();
+  const after = wallet("p-carl");
+  must(after.donorTier === "bronze", `тариф не выдан: ${after.donorTier}`);
+  must(after.caseKeys === (before.caseKeys ?? 0), `донат выдал ключи: ${(before.caseKeys ?? 0)} → ${after.caseKeys}`);
+  must(after.coins === (before.coins ?? 0), `донат выдал монеты: ${(before.coins ?? 0)} → ${after.coins}`);
+  must(after.cosmetics.rolls >= DONATIONS_GIFT_ROLLS, `не выдана подарочная прокрутка: ${after.cosmetics.rolls}`);
+  return `ключей ${after.caseKeys}, монет ${after.coins}, прокруток ${after.cosmetics.rolls}`;
+});
+
+await step("спорный платёж снимает тариф и блокирует выдачу", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("Спорный платёж"));
+  answer(pressLabel("Carl"));
+  answer(fillModal("chargeback, ID 42", false));
+  await open("sw:admin", admin);
+  flush();
+  let record = wallet("p-carl");
+  must(record.donorTier === "none", `тариф не снят: ${record.donorTier}`);
+  must(record.donBlockUntil > Date.now(), `блокировка не выставлена: ${record.donBlockUntil}`);
+  must(/chargeback/.test(record.donBlockReason), `причина не записана: ${record.donBlockReason}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("Спорный платёж"));
+  answer(pressLabel("Carl"));
+  answer(fillModal("разобрано", true));
+  await open("sw:admin", admin);
+  flush();
+  record = wallet("p-carl");
+  must(record.donBlockUntil === 0, `блокировка не снята: ${record.donBlockUntil}`);
+  return "спор открыт и закрыт, тариф снят";
+});
+
+await step("цель сбора: ручная выдача добирает её и платит всем", async () => {
+  const target = wallet("p-dan") ?? {};
+  const coinsBefore = target.coins ?? 0;
+  const keysBefore = target.caseKeys ?? 0;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("Цель сбора"));
+  answer(pressLabel("Назначить цель сбора"));
+  answer(fillModal("Хостинг на месяц", "199", "30"));
+  await open("sw:admin", admin);
+  flush();
+  let goal = readJson("sw:don:goal") ?? {};
+  must(goal.target === 199, `цель не назначена: ${JSON.stringify(goal).slice(0, 160)}`);
+  must(goal.raised === 0, `поднятое не обнулено: ${goal.raised}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("Выдать вручную"));
+  answer(fillModal("Dan", "bronze", "30", "invoice 777, карта"));
+  await open("sw:admin", admin);
+  flush();
+  goal = readJson("sw:don:goal") ?? {};
+  must(goal.raised >= 199, `вклад не учтён: ${goal.raised}/${goal.target}`);
+  must(goal.paidAt > 0, "выплата по цели не сработала");
+  const after = wallet("p-dan");
+  must(after.donorTier === "bronze", `тариф не выдан вручную: ${after.donorTier}`);
+  must(after.coins >= coinsBefore + 1200, `награда за цель не дошла: ${after.coins} против ${coinsBefore}`);
+  must(after.caseKeys >= keysBefore + 1, `ключ за цель не выдан офлайну: ${after.caseKeys}`);
+  const receipts = readJson("sw:don:receipts") ?? [];
+  const mine = receipts.filter((row) => row.playerId === "p-dan");
+  must(mine.some((row) => row.via === "donate" && row.amount === 199), `чека доната нет: ${JSON.stringify(mine).slice(0, 200)}`);
+  must(mine.some((row) => row.via === "gift"), "чека о подарке за цель нет");
+  const grantsLog = readJson("sw:don:grants") ?? [];
+  const last = grantsLog.at(-1) ?? {};
+  must(last.actor === "Admin" && /invoice 777/.test(last.note), `в журнале нет руки админа и ID платежа: ${JSON.stringify(last).slice(0, 200)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Донат"));
+  answer(pressLabel("Цель сбора"));
+  answer(pressLabel("Снять цель"));
+  await open("sw:admin", admin);
+  flush();
+  goal = readJson("sw:don:goal") ?? {};
+  must(!goal.target, `цель не снята: ${JSON.stringify(goal).slice(0, 120)}`);
+  return `цель 199/199, кошельков с наградой: ${Object.keys(meta()).length}`;
+});
+
+await step("косметика покупается за ₡ и меняет nameTag", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  flush();
+  const before = wallet("p-alice").coins;
+  answer(pressLabel("Звезда · 2200"));
+  answer(pressLabel("Куплено"));
+  await open("sw:shop", alice);
   flush();
   const record = wallet("p-alice");
-  must(record.caseKeys >= 2, `ключей ${record.caseKeys}`);
-  return `ключей ${record.caseKeys}`;
+  must(record.coins === before - 2200, `цена списана неверно: ${before} → ${record.coins}`);
+  must(record.cosmetics.owned.includes("prefix_star"), `предмет не зачислен: ${record.cosmetics.owned.join(",")}`);
+  must(String(alice.nameTag).includes("✦"), `приставка не применена: ${alice.nameTag}`);
+  return `${before} → ${record.coins}, tag=${alice.nameTag}`;
+});
+
+await step("подарочная прокрутка не выдаёт предметов в инвентарь", async () => {
+  flush();
+  const itemsBefore = inventoryOf(carl)._slots.length;
+  const coinsBefore = wallet("p-carl").coins;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Открыть подарком"));
+  await open("sw:shop", carl);
+  flush();
+  const record = wallet("p-carl");
+  must(record.cosmetics.owned.length >= 1, `прокрутка ничего не выдала: ${record.cosmetics.owned.length}`);
+  must(record.cosmetics.owned.every((id) => COSMETIC_IDS.includes(id)), `в косметику попало чужое: ${record.cosmetics.owned.join(",")}`);
+  must(record.cosmetics.rolls === 0, `прокрутки не списаны: ${record.cosmetics.rolls}`);
+  must(record.coins === coinsBefore, `со списанием монет: ${coinsBefore} → ${record.coins}`);
+  must(inventoryOf(carl)._slots.length === itemsBefore, "в инвентарь что-то легло");
+  return `выдано ${record.cosmetics.owned.join(",")}`;
+});
+
+await step("чек покупки доступен игроку", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Мои покупки"));
+  await open("sw:shop", alice);
+  const lines = chatOf(alice).join(" / ");
+  must(/Звезда/.test(lines), `чека нет: ${lines.slice(-200)}`);
+  return lines.slice(0, 80);
 });
 
 scenario("queue");
@@ -794,7 +968,129 @@ await step("pvp-статистика и серия", () => {
   return `Alice ${aliceRecord.pvpKills} уб., Bob ${bobRecord.pvpDeaths} см. (серия Alice ${aliceRecord.streak})`;
 });
 
+scenario("referrals");
+
+await step("код приглашения выдаётся один раз и стабилен", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мой код"));
+  clearChat(alice);
+  await open("sw:ref", alice);
+  const text = chatOf(alice).join(" / ");
+  const found = /Твой код: ([a-z0-9]{6,12})/.exec(text);
+  must(found, `код не показан: ${text.slice(-200)}`);
+  flush();
+  const record = wallet("p-alice");
+  must(record.refCode === found[1], `код в кошельке не совпал: ${record.refCode} ≠ ${found[1]}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мой код"));
+  clearChat(alice);
+  await open("sw:ref", alice);
+  const again = /Твой код: ([a-z0-9]{6,12})/.exec(chatOf(alice).join(" / "));
+  must(again && again[1] === found[1], "код изменился между показом");
+  return `код ${found[1]}`;
+});
+
+await step("чужие коды: сам себе и неизвестный отклоняются", async () => {
+  const code = wallet("p-alice").refCode;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Ввести код друга"));
+  answer(fillModal(code));
+  await open("sw:ref", alice);
+  let text = chatOf(alice).join(" / ");
+  must(/Себя пригласить нельзя/i.test(text), `самосвязь не отклонена: ${text.slice(-160)}`);
+  const novice = mc.makePlayer("p-novice", "Novice", { x: 20, y: 71, z: 20 });
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(novice);
+  answer(pressLabel("Ввести код друга"));
+  answer(fillModal("zzzzzz"));
+  await open("sw:ref", novice);
+  text = chatOf(novice).join(" / ");
+  must(/Такого кода нет/i.test(text), `несуществующий код принят: ${text.slice(-160)}`);
+  mc.removePlayer("p-novice");
+  return "оба отказа есть";
+});
+
+await step("старый аккаунт код не привязывает", async () => {
+  mc.advance(8 * 24 * 60 * 60 * 1000);
+  const code = wallet("p-alice").refCode;
+  clearChat(bob);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Ввести код друга"));
+  answer(fillModal(code));
+  await open("sw:ref", bob);
+  const text = chatOf(bob).join(" / ");
+  must(/первые 72 ч/i.test(text), `окно привязки не сработало: ${text.slice(-180)}`);
+  flush();
+  must(wallet("p-bob").refBy === "", "привязка всё-таки появилась");
+  return "окно 72 ч держит";
+});
+
+await step("награда ждёт реальных часов игры и упирается в дневной лимит", async () => {
+  const code = wallet("p-alice").refCode;
+  const coinsBefore = wallet("p-alice").coins;
+  const novices = [];
+  for (let index = 0; index < 4; index += 1) {
+    const novice = mc.makePlayer(`p-novice-${index}`, `Novice${index}`, { x: 24 + index, y: 71, z: 24 });
+    novices.push(novice);
+    ui.shown.length = 0;
+    ui.answers.length = 0;
+    answer(pressLabel("Ввести код друга"));
+    answer(fillModal(code));
+    await open("sw:ref", novice);
+  }
+  flush();
+  const bound = novices.filter((row) => wallet(row.id) && wallet(row.id).refBy === "p-alice");
+  must(bound.length === 4, `привязались не все: ${bound.length}`);
+  mc.tickTimes(620);
+  flush();
+  const early = novices.filter((row) => wallet(row.id).refRewarded);
+  must(early.length === 0, `награда выдана без наигранных часов: ${early.length}`);
+  mc.advance(3 * 60 * 60 * 1000);
+  mc.tickTimes(620);
+  flush();
+  const rewarded = novices.filter((row) => wallet(row.id).refRewarded);
+  must(rewarded.length === 3, `дневной лимит не сработал: выдано ${rewarded.length} из 4`);
+  const record = wallet("p-alice");
+  must(record.refToday === 3, ` счётчик дня неверен: ${record.refToday}`);
+  must(record.coins === coinsBefore + 3 * 2500, `сумма наград не совпала: ${coinsBefore} → ${record.coins}`);
+  const paid = novices.filter((row) => wallet(row.id).refRewarded);
+  for (const row of paid) must(wallet(row.id).coins >= REFERRAL_NOVICE_COINS, `новичок без награды: ${row.name} ${wallet(row.id).coins}`);
+  must(paid.length > 0, "ни один новичок не награждён");
+  const info = String(run("sw:meta", admin, "info").message);
+  must(/приглашения:/.test(info), `в отчёте нет блока приглашений: ${info.slice(-220)}`);
+  const registry = readJson("sw:ref:codes") ?? {};
+  must(Object.keys(registry).length >= 5, `в реестре кодов мало записей: ${Object.keys(registry).length}`);
+  const aliceCode = wallet("p-alice").refCode;
+  must(registry[aliceCode]?.playerId === "p-alice", `реестр кодов разошёлся с кошельком: ${JSON.stringify(registry[aliceCode])}`);
+  for (const novice of novices) mc.removePlayer(novice.id);
+  return `выдано ${rewarded.length}/4, у пригласившего +${record.coins - coinsBefore} ₡`;
+});
+
 scenario("storage");
+
+await step("неактивные пустые кошельки прореживаются задачей meta-prune", () => {
+  const ghost = mc.makePlayer("p-ghost", "Ghost", { x: 40, y: 71, z: 40 });
+  flush();
+  must(wallet("p-ghost") !== undefined, "запись игрока не создалась");
+  must((wallet("p-ghost").coins ?? 0) === 0, `у призрака есть монеты: ${wallet("p-ghost").coins}`);
+  mc.removePlayer(ghost);
+  mc.advance(61 * 24 * 60 * 60 * 1000);
+  expectedWarns.push(/\[warn\]\[balances\] удалено записей/);
+  mc.tickTimes(22000);
+  flush();
+  must(wallet("p-ghost") === undefined, "пустой кошелёк не прорежен");
+  must(wallet("p-alice") !== undefined, "прореживание затронуло кошелёк с монетами");
+  must(wallet("p-carl") !== undefined, "прореживание затронуло кошелёк донера");
+  must(wallet("p-alice").coins > 0, "у alice пропали монеты");
+  return "Ghost убран, кошельки с содержимым целы";
+});
+
 
 await step("переполнение DP блокирует запись клана", async () => {
   const index = readJson("sw:clans:index");

@@ -58,7 +58,7 @@ const ru: Dict = {
   "admin.done": "Готово",
   "ban.kick": "Забанен: {reason}",
   "kick.reason": "Кикнут администратором: {reason}",
-  "rules.text": "1. PvP разрешён везде, кроме лобби. 2. Гриф и воровство разрешены. 3. Читы, X-ray, авто-кликеры запрещены. 4. Дюп запрещён. 5. Оскорбления в чате — мут по решению админа. 6. Баги сообщать админам, а не использовать.",
+  "rules.text": "1. PvP разрешён везде, кроме лобби. 2. Гриф и воровство разрешены. 3. Читы, X-ray, авто-кликеры запрещены — sanction по решению админа. 4. Дюп запрещён, найденный баг нести админу, а не использовать. 5. Оскорбления и травля — мут/бан по решению админа. 6. Донат: только косметика и приоритет входа; монеты, предметы, ключи к боевым кейсам и любые преимущества за реальные деньги не продаются. 7. Донат выдаёт админ вручную после подтверждения платежа; возвратов нет, кроме «заплатил, но не выдал»; при отзыве платежа (chargeback) косметика снимается, а выдачи блокируются на 30 дней. 8. Админ никогда не просит деньги в игре или в личке — всё только через заявку в /sw:don. 9. Игрокам младше 14 — с согласия родителя. 10. Сервер не является официальным продуктом Mojang или Microsoft и не одобрен ими.",
   "stats.text": "Убийств: {kills} | Смертей: {deaths} | Время: {time} | Скор AC: {score}",
   "stats.mobile": "Платформа: мобильная",
   "common.yes": "Да",
@@ -122,7 +122,7 @@ const en: Dict = {
   "admin.done": "Done",
   "ban.kick": "Banned: {reason}",
   "kick.reason": "Kicked by admin: {reason}",
-  "rules.text": "1. PvP is allowed everywhere except the lobby. 2. Griefing and stealing are allowed. 3. Cheats, X-ray, autoclickers are forbidden. 4. Duping is forbidden. 5. Chat abuse leads to a manual mute. 6. Report bugs instead of abusing them.",
+  "rules.text": "1. PvP is allowed everywhere except the lobby. 2. Griefing and stealing are allowed. 3. Cheats, X-ray and autoclickers are forbidden - sanctions are decided by an admin. 4. Duping is forbidden; report bugs instead of abusing them. 5. Abuse and bullying lead to a manual mute or ban. 6. Donations: cosmetics and priority entry only; coins, items, combat case keys and any advantage are never sold for real money. 7. A donor perk is granted manually after the payment is confirmed; no refunds, except “paid but not delivered”; a chargeback revokes the cosmetics and blocks grants for 30 days. 8. An admin never asks for money in game or in DMs - only via the request form in /sw:don. 9. Players under 14 need parental consent. 10. This server is NOT AN OFFICIAL MINECRAFT SERVICE and is not approved by or associated with Mojang or Microsoft.",
   "stats.text": "Kills: {kills} | Deaths: {deaths} | Time: {time} | AC score: {score}",
   "stats.mobile": "Platform: mobile",
   "common.yes": "Yes",
@@ -161,3 +161,14 @@ export const raw = (lang: Lang, key: string, params?: Record<string, string | nu
 };
 
 export const translate = raw;
+
+export const dictionaryStats = (): { ru: number; en: number; missingEn: string[]; missingRu: string[] } => {
+  const ruKeys = new Set([...Object.keys(dicts.ru), ...Object.keys(extra.ru)]);
+  const enKeys = new Set([...Object.keys(dicts.en), ...Object.keys(extra.en)]);
+  return {
+    ru: ruKeys.size,
+    en: enKeys.size,
+    missingEn: [...ruKeys].filter((key) => !enKeys.has(key)).sort(),
+    missingRu: [...enKeys].filter((key) => !ruKeys.has(key)).sort(),
+  };
+};
