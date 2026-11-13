@@ -38,4 +38,20 @@ if [[ "$RESTART" == "1" ]]; then
   systemctl restart swipecraft.service
 fi
 
-log "не забудь, что паки должны быть включены в мире: worlds/swipecraft/world_behavior_packs.json и world_resource_packs.json"
+PROPS="$ROOT/server/server.properties"
+LEVEL_NAME="$(grep -E '^level-name=' "$PROPS" | head -1 | cut -d= -f2- | tr -d '[:space:]')"
+WORLD_DIR="$ROOT/server/worlds/$LEVEL_NAME"
+
+if [[ -n "$LEVEL_NAME" && -d "$WORLD_DIR" ]]; then
+  printf '[{"pack_id":"%s","version":[1,0,0]}]' "$uuid_bp" > "$WORLD_DIR/world_behavior_packs.json"
+  printf '[{"pack_id":"%s","version":[1,0,0]}]' "$uuid_rp" > "$WORLD_DIR/world_resource_packs.json"
+  chown bedrock:bedrock "$WORLD_DIR/world_behavior_packs.json" "$WORLD_DIR/world_resource_packs.json"
+  log "паки подключены к миру $LEVEL_NAME"
+else
+  log "мир $LEVEL_NAME ещё не создан: после первого запуска выполни $0 повторно"
+fi
+
+if [[ "$RESTART" == "1" ]]; then
+  log "перезапуск службы"
+  systemctl restart swipecraft.service
+fi

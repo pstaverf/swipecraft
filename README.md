@@ -9,7 +9,7 @@ PvP-анархия для Minecraft Bedrock **26.60+** (iPhone / Android, без
 |---|---|---|
 | 1 | Архитектура, выбор технологий, хостинг | готово → `docs/ARCHITECTURE.md`, `docs/HOSTING.md` |
 | 2 | Установка, запуск, systemd, бэкапы, firewall, анти-лаг | готово → `docs/DEPLOY.md`, `docs/SERVER-PROPERTIES.md`, `deploy/` |
-| 3 | Ядро анархии: лобби, rtp, граница, сезон, античит | ожидает |
+| 3 | Ядро анархии: лобби, rtp, граница, сезон, античит | готово → `docs/ANTICHEAT.md`, `docs/ANTIDUPE.md`, `src/` |
 | 4 | Ивенты каждые 6 часов (7 механик) | ожидает |
 | 5 | Кланы, экономика, кейсы, квесты, UI | ожидает |
 | 6 | Монетизация и рост | ожидает |
@@ -21,6 +21,27 @@ cd /opt/swipecraft-src
 BDS_VERSION=1.26.60.6 bash deploy/install-bds.sh
 bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 ```
+
+## Сборка и деплой паков
+
+```bash
+npm ci
+npm run check      # tsc --noEmit по @minecraft/server 2.11.0
+npm run build      # esbuild -> packs/behavior_pack/scripts/main.js
+npm run pack       # .mcpack для ручной проверки на клиенте
+bash deploy/deploy-packs.sh   # разложить паки на сервере, включить их в мире, перезапустить
+```
+
+## Команды в игре
+
+```
+/sw:menu                    меню (RTP, правила, статистика, язык, админ-панель)
+/sw:rtp                     случайная телепортация
+/sw:admin                   админ-панель (нужен тег admin)
+/sw:ac show|set|reset       конфиг античита без перезапуска
+```
+
+Тег админа выдаётся в консоли сервера: `tag <ник> add admin`.
 
 ## Ключевые особенности версии 26.60
 
@@ -35,6 +56,8 @@ bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 - `docs/HOSTING.md` — расчёт ресурсов, варианты хостинга, сетевые требования NetherNet.
 - `docs/DEPLOY.md` — установка, проверка портов, бэкапы, мониторинг, диагностика входа.
 - `docs/SERVER-PROPERTIES.md` — каждый ключ конфигурации с обоснованием.
+- `docs/ANTICHEAT.md` — детекты, окна допуска, надёжность, горячая правка конфига.
+- `docs/ANTIDUPE.md` — таблица векторов дюпа и что из них закрывается скриптом.
 
 ## Эксплуатация
 
