@@ -1,0 +1,21 @@
+{
+  "name": "swipecraft",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Bedrock 26.60 PvP anarchy server core",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "watch": "node tools/build.mjs --watch",
+    "check": "tsc --noEmit",
+    "pack": "node tools/build.mjs && node tools/package-pack.mjs",
+    "stability": "node tools/stability/build.mjs && node tools/stability/run.mjs"
+  },
+  "devDependencies": {
+    "@minecraft/server": "2.11.0",
+    "@minecraft/server-ui": "2.3.0",
+    "@minecraft/vanilla-data": "1.26.60",
+    "esbuild": "0.25.5",
+    "typescript": "5.7.3"
+  }
+}
