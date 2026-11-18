@@ -212,30 +212,40 @@ const openDonGrant = async (player: Player): Promise<void> => {
   });
 };
 
+type DonAdminAction = "requests" | "grant" | "revoke" | "log" | "queue" | "release" | "goal" | "dispute" | "cosmetic" | "referrals" | "resetBind" | "metaAdmin";
+type DonAdminEntry = { readonly key: string; readonly action: DonAdminAction; readonly counter?: () => number };
+
+/** Тот же принцип, что и в `openMenu`: порядок кнопок и порядок действий — один список. */
+const DON_ADMIN_ENTRIES: readonly DonAdminEntry[] = [
+  { key: "ui.admin.don", action: "requests", counter: () => openRequests().length },
+  { key: "ui.admin.don.grant", action: "grant" },
+  { key: "ui.admin.don.revoke", action: "revoke" },
+  { key: "ui.admin.don.log", action: "log" },
+  { key: "ui.admin.queue", action: "queue" },
+  { key: "ui.admin.queue.release", action: "release" },
+  { key: "cos.goal.button", action: "goal" },
+  { key: "cos.dispute.button", action: "dispute" },
+  { key: "cos.grant.button", action: "cosmetic" },
+  { key: "cos.log.button", action: "referrals" },
+  { key: "ui.admin.don.resetBind", action: "resetBind" },
+  { key: "ui.admin.meta", action: "metaAdmin" },
+];
+
 export const openDonAdmin = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:don:admin", async () => {
-    const actions = ["requests", "grant", "revoke", "log", "queue", "release", "goal", "dispute", "cosmetic", "referrals", "resetBind", "back"];
     const form = new ActionFormData()
       .title(t(player, "ui.admin.don"))
-      .body([...donorReport(), ...queueReport()].join("\n").slice(0, 1800))
-      .button(`${t(player, "ui.admin.don")} · ${openRequests().length}`)
-      .button(t(player, "ui.admin.don.grant"))
-      .button(t(player, "ui.admin.don.revoke"))
-      .button(t(player, "ui.admin.don.log"))
-      .button(t(player, "ui.admin.queue"))
-      .button(t(player, "ui.admin.queue.release"))
-      .button(t(player, "cos.goal.button"))
-      .button(t(player, "cos.dispute.button"))
-      .button(t(player, "cos.grant.button"))
-      .button(t(player, "cos.log.button"))
-      .button(t(player, "ui.admin.don.resetBind"))
-      .button(t(player, "ui.admin.meta"));
+      .body([...donorReport(), ...queueReport()].join("\n").slice(0, 1800));
+    for (const entry of DON_ADMIN_ENTRIES) {
+      const label = t(player, entry.key);
+      form.button(entry.counter ? `${label} · ${entry.counter()}` : label);
+    }
     const response = await form.show(player);
     if (response.canceled || response.selection === undefined) {
       busyNote(player, response);
       return;
     }
-    switch (actions[response.selection]) {
+    switch (DON_ADMIN_ENTRIES[response.selection]?.action) {
       case "requests":
         await openDonRequests(player);
         return;
@@ -273,6 +283,7 @@ export const openDonAdmin = async (player: Player): Promise<void> => {
         return;
       default:
         await openMetaAdmin(player);
+        return;
     }
   });
 };

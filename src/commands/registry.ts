@@ -69,7 +69,7 @@ const register = (
         if (typeof result === "string") {
           return { status: CustomCommandStatus.Success, message: result.slice(0, 900) };
         }
-        // CustomCommandResult нельзя вернуть промисом ( typings: callback возвращает
+        // CustomCommandResult нельзя вернуть промисом (typings: callback возвращает
         // CustomCommandResult | undefined синхронно), поэтому текст асинхронного обработчика
         // уходит в чат: иначе «Недостаточно прав» от /sw:admin до игрока не доезжал.
         void result
