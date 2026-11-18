@@ -381,6 +381,10 @@ export const DEFAULT_ECO_TUNABLES: EcoTunables = {
   donorTrailsEnabled: true,
   quarryEnabled: true,
   totemsEnabled: true,
+  spawnProtectEnabled: true,
+  ranksEnabled: true,
+  hudBarEnabled: true,
+  hudSidebarEnabled: true,
 };
 
 export const CASE_IDS: CaseId[] = ["basic", "elite"];

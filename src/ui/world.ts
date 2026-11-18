@@ -23,6 +23,7 @@ import {
   teleportToQuarry,
 } from "../world/quarry";
 import { checkSpawnIntegrity, spawnBlueprint, spawnPreviewLines, spawnStatus, startSpawnBuild, spawnStatusLines, setSpawnPoint } from "../world/spawnbuild";
+import { spawnProtectLine } from "../world/spawn";
 import {
   canForgeTotem,
   forgeTotem,
@@ -188,16 +189,17 @@ const QUARRY_ADMIN_BACK: Entry = BACK_TO_WORLD;
 
 const MOD_TOGGLES: readonly {
   readonly key: string;
-  readonly path: "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" | "totemsEnabled";
+  readonly path: "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" | "totemsEnabled" | "spawnProtectEnabled";
 }[] = [
   { key: "ui.admin.eco.queue", path: "queueEnabled" },
   { key: "ui.admin.eco.trails", path: "donorTrailsEnabled" },
   { key: "admin.world.quarry.toggle", path: "quarryEnabled" },
   { key: "admin.world.totem.toggle", path: "totemsEnabled" },
+  { key: "admin.world.protect.toggle", path: "spawnProtectEnabled" },
 ];
 
 /**
- * Стоп-краны: четыре булева тумблера мира в одном списке (§5.6). Ничего не меняется молча —
+ * Стоп-краны: пять булевых тумблеров мира в одном списке (§5.6). Ничего не меняется молча —
  * применённые флаги печатаются, а «изменений нет» тоже ответ, а не тишина.
  */
 const openModToggles = async (player: Player): Promise<void> => {
@@ -392,6 +394,7 @@ export const openWorldMods = async (player: Player): Promise<void> => {
           state: totems.enabled ? t(player, "admin.world.on") : t(player, "admin.world.off"),
         });
       })(),
+      spawnProtectLine(player),
     ].join("\n");
     const form = new ActionFormData().title(t(player, "ui.admin.world")).body(body.slice(0, 1800));
     for (const entry of WORLD_ADMIN_ENTRIES) form.button(t(player, entry.key));

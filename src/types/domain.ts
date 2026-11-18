@@ -251,6 +251,15 @@ export interface EcoTunables {
   quarryEnabled: boolean;
   /** стоп-кран тотемов: обряд недоступен, спасение не срабатывает, реестр не трогается */
   totemsEnabled: boolean;
+  /** защита спавна: ломать/ставить/взрывать в лобби нельзя никому, включая админов */
+  spawnProtectEnabled: boolean;
+  /** стоп-кран рангов: префикс не навешивается, из кейса ранг не выпадает */
+  ranksEnabled: boolean;
+  /** персональная строка статистики под хотбаром */
+  hudBarEnabled: boolean;
+  /** общий сайдбар (правая панель): на Bedrock это единственный HUD-текст, доступный сразу
+   * всем, поэтому строки серверные, а не личные */
+  hudSidebarEnabled: boolean;
 }
 
 export interface EcoAccount {

@@ -35,7 +35,7 @@ const PATH = "minecraft:stone_bricks";
 const DAIS = "minecraft:polished_blackstone";
 const MENU_BLOCK = "minecraft:gold_block";
 
-interface BlueprintCell {
+export interface BlueprintCell {
   x: number;
   y: number;
   z: number;
@@ -95,10 +95,24 @@ export const spawnBlueprint = (): BlueprintCell[] => {
   push(altarX, floorY + 2, altarZ, MENU_BLOCK);
 
   cache = cells;
+  cellIndex = undefined; // новый blueprint = старый индекс клеток протух
   return cells;
 };
 
 export const spawnMenuBlockLocation = (): Vector3 => ({ x: lobby.x, y: floorY + 2, z: lobby.z - 4 });
+
+let cellIndex: Map<string, BlueprintCell> | undefined;
+
+/**
+ * Ожидание blueprint'а для конкретной клетки. Нужно затем, чтобы откат установки блока на
+ * спавне возвращал *структуру*, а не дыру: если игрок поставил блок туда, где по плану лежит
+ * плита или вода фонтана, «просто убрать блок» означало бы, что защиту спавна ломает сама
+ * защита спавна.
+ */
+export const spawnBlueprintCellAt = (x: number, y: number, z: number): BlueprintCell | undefined => {
+  if (!cellIndex) cellIndex = new Map(spawnBlueprint().map((cell) => [`${cell.x}:${cell.y}:${cell.z}`, cell]));
+  return cellIndex.get(`${Math.floor(x)}:${Math.floor(y)}:${Math.floor(z)}`);
+};
 
 export const isSpawnMenuBlock = (block: { typeId?: string; x?: number; y?: number; z?: number }): boolean => {
   if (block?.typeId !== MENU_BLOCK) return false;

@@ -1599,10 +1599,12 @@ await step("экран карьера и админ-экран модов: по�
   answer(fillModal(true, true));
   await open("sw:admin", admin);
   const modal = ui.shown.at(-1);
-  must(modal.controls.length === 4, `тумблеров в форме: ${modal.controls.length}`);
+  must(modal.controls.length === 5, `тумблеров в форме: ${modal.controls.length}`);
   must(modal.controls[2].config?.defaultValue === false, `тумблер не показывает текущее состояние: ${JSON.stringify(modal.controls[2])}`);
   must(modal.controls[3].config?.defaultValue === true, `тумблер тотемов не показывает текущее состояние: ${JSON.stringify(modal.controls[3])}`);
+  must(modal.controls[4].config?.defaultValue === true, `тумблер защиты спавна не показывает текущее состояние: ${JSON.stringify(modal.controls[4])}`);
   must(readJson("sw:eco:cfg")?.totemsEnabled !== false, "тумблер тотемов слипся в выключенный из-за отсутствующего значения в ответе формы");
+  must(readJson("sw:eco:cfg")?.spawnProtectEnabled !== false, "защита спавна слиплась в выключенную из-за отсутствующего значения в ответе формы");
   must(/Ни один флаг не изменился/.test(chatOf(admin).join(" / ")), `форма солгала про изменения: ${chatOf(admin).join(" / ")}`);
   reply("sw:meta", admin, "set", "quarryEnabled", "true");
   flush();
@@ -2134,6 +2136,182 @@ check("тотемы не напечатали ни одной монеты за 
   must(typeof summary.live === "number" && typeof summary.savesToday === "number", `сводка неполная: ${JSON.stringify(summary)}`);
   must(mc.state.dispatchErrors.length === 0, `ошибок в диспетчер событий: ${mc.state.dispatchErrors.length} (${mc.state.dispatchErrors.slice(-1)})`);
   return `minted ${ledger.minted}, burned ${ledger.burned}, живых зарядов ${summary.live}`;
+});
+
+scenario("защита спавна");
+
+const probeS = () => globalThis.__swipecraftProbe.spawn;
+const spawnBuildProbe = () => globalThis.__swipecraftProbe.spawnBuild;
+const FLOOR_CELL = cellKey(0, 79, 0);
+
+check("ломать блоки на спавне нельзя, и причина называется", () => {
+  const before = mc.state.blockOverrides.get(FLOOR_CELL);
+  must(before === "minecraft:polished_andesite", `пол спавна не из blueprint'а: ${before}`);
+  clearChat(alice);
+  const denied = mc.breakBlock(alice, { x: 0, y: 79, z: 0 });
+  must(denied.cancelled === true, "защита не отменила playerBreakBlock на спавне");
+  must(mc.state.blockOverrides.get(FLOOR_CELL) === before, "пол спавна всё-таки изменён");
+  const chat = chatOf(alice).join(" / ");
+  must(/Здесь спавн: блоки ломать нельзя/.test(chat), `отказ не объяснён: ${chat.slice(-160)}`);
+  // и обратная половина: за кругом спавна копать можно, иначе «защита» = запрет игры
+  mc.state.blockOverrides.set(cellKey(26, 79, 0), "minecraft:diamond_block");
+  const free = mc.breakBlock(alice, { x: 26, y: 79, z: 0 });
+  must(free.cancelled === false, "защита залезла за пределы круга спавна");
+  must(mc.state.blockOverrides.get(cellKey(26, 79, 0)) === "minecraft:air", "свободная клетка не сломалась");
+  const status = probeS().spawnProtectStatus();
+  must(status.enabled === true && status.breakDenied >= 1, `статус защиты врёт: ${JSON.stringify(status)}`);
+  return `отказ внутри круга + свободная добыча снаружи, отказов: ${status.breakDenied}`;
+});
+
+check("напоминание об отказе не выливается в спам", () => {
+  const probe = probeS();
+  probe.forgetNotice(alice.id);
+  clearChat(alice);
+  for (let index = 0; index < 6; index += 1) mc.breakBlock(alice, { x: 1, y: 79, z: 1 });
+  must(chatOf(alice).length === 1, `6 отказов подряд напечатали ${chatOf(alice).length} строк`);
+  probe.forgetNotice(alice.id);
+  mc.breakBlock(alice, { x: 1, y: 79, z: 1 });
+  must(chatOf(alice).length === 2, "после сброса напоминания объяснение не вернулось");
+  must(probe.spawnProtectStatus().breakDenied >= 8, "счётчик отказов не растёт — по нему и читают, много ли мы мешаем");
+  return "6 попыток = 1 строка в чате";
+});
+
+const countInInventory = (player, typeId) => {
+  const container = player.getComponent("minecraft:inventory")?.container;
+  let total = 0;
+  for (let index = 0; index < container.size; index += 1) {
+    const stack = container.getItem(index);
+    if (stack?.typeId === typeId) total += stack.amount;
+  }
+  return total;
+};
+
+check("установка на спавне откатывается, предмет возвращается", () => {
+  giveItem(alice, 9, "minecraft:cobblestone", 3);
+  const before = countInInventory(alice, "minecraft:cobblestone");
+  const coins = wallet("p-alice").coins ?? 0;
+  clearChat(alice);
+  // напоминание троттлится на 8 с — без сброса проверка «объяснили ли отказ» ловила бы
+  // молчание protection-механизма, а не отсутствие текста
+  probeS().forgetNotice(alice.id);
+  // воздух над плитой: обычная ситуация «поставил блок на спавне». Ищем предмет по всему
+  // инвентарю, а не в 9-м слоте: возврат ложится в первую свободную ячейку, как в игре
+  const placed = mc.placeBlock(alice, { x: 2, y: 80, z: 2 }, "minecraft:cobblestone");
+  must(placed.placed === "minecraft:air", `блок на спавне остался стоять: ${placed.placed}`);
+  must(countInInventory(alice, "minecraft:cobblestone") === before + 1, `предмет не вернулся в руки (было ${before}) — откат был бы кражей`);
+  must(/блок убрал обратно/.test(chatOf(alice).join(" / ")), "отказ установки не объяснён");
+  // клетка из blueprint'а: откат обязан вернуть структуру, а не дыру в полу
+  const cell = mc.placeBlock(alice, { x: 0, y: 79, z: 0 }, "minecraft:cobblestone");
+  must(cell.placed === "minecraft:polished_andesite", `клетка blueprint'а откатана в ${cell.placed}, а не в плиту`);
+  must(countInInventory(alice, "minecraft:cobblestone") === before + 2, "при откате в клетку blueprint'а предмет пропал");
+  must((wallet("p-alice").coins ?? 0) === coins, "защита спавна тронула монеты");
+  const status = probeS().spawnProtectStatus();
+  must(status.placeReverted >= 2, `откатов установки насчитано ${status.placeReverted}`);
+  return "откат в воздух + откат в плиту blueprint'а";
+});
+
+check("взрыв у спавна вырезает защищённые клетки, но не отменяется", () => {
+  mc.state.blockOverrides.set(cellKey(26, 79, 2), "minecraft:diamond_block");
+  const before = probeS().spawnProtectStatus().explosionCells;
+  const blast = mc.explode({ x: 24, y: 79, z: 1 }, {
+    blocks: [{ x: 0, y: 79, z: 0 }, { x: 1, y: 79, z: 0 }, { x: 26, y: 79, z: 2 }],
+  });
+  must(blast.cancelled === false, "взрыв целиком на границе отменён: крёр у спавна перестал быть крём");
+  must(mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:polished_andesite", "взрыв снёс плиту спавна");
+  must(mc.state.blockOverrides.get(cellKey(1, 79, 0)) === "minecraft:polished_andesite", "взрыв снёс вторую клетку пола");
+  must(mc.state.blockOverrides.get(cellKey(26, 79, 2)) === "minecraft:air", "взрыв не тронул то, что вне спавна");
+  // целиком внутри круга отменять уже можно: защищать там нечего, а урон по игрокам гасит entityHurt
+  const deep = mc.explode({ x: 0, y: 79, z: 0 }, { blocks: [{ x: 2, y: 79, z: 2 }, { x: 3, y: 79, z: 3 }] });
+  must(deep.cancelled === true, "взрыв целиком на спавне не отменён");
+  const after = probeS().spawnProtectStatus().explosionCells;
+  must(after - before === 4, `клеток снято ${after - before}, ожидалось 4`);
+  return "2 + 2 клетки снято, урон снаружи прошёл";
+});
+
+check("ведро на спавне не льёт, при этом меч и добыча не задеты", () => {
+  alice.teleport({ x: 4, y: 71, z: 4 });
+  const water = mc.useItem(alice, new mc.ItemStack("minecraft:water_bucket", 1));
+  must(water.cancelled === true, "воду на спавне разрешили разливать");
+  const bucket = mc.useItem(alice, new mc.ItemStack("minecraft:bucket", 1));
+  must(bucket.cancelled === true, "пустое ведро на спавне работает — тогда и зачерпнуть воду можно");
+  const sword = mc.useItem(alice, new mc.ItemStack("minecraft:iron_sword", 1));
+  must(sword.cancelled === false, "защита спавна цепляет не только вёдра");
+  mc.state.blockOverrides.set(cellKey(4, 79, 4), "minecraft:dirt");
+  const dig = mc.breakBlock(alice, { x: 4, y: 79, z: 4 });
+  must(dig.cancelled === true, "защита соскакивает, если игрок уже держит в руке что-то кроме ведра");
+  alice.teleport({ x: 60, y: 71, z: 60 });
+  const free = mc.useItem(alice, new mc.ItemStack("minecraft:water_bucket", 1));
+  must(free.cancelled === false, "за пределами спавна ведро стало недоступно");
+  return "3 отказа по ведру, 1 свободное применение меча";
+});
+
+check("античит не видит служебных отказов защиты спавна", () => {
+  const ac = globalThis.__swipecraftProbe.anticheat;
+  for (let index = 0; index < 25; index += 1) mc.breakBlock(bob, { x: 5, y: 79, z: 5 });
+  must(ac.playerScore(bob.id) === 0, `античит оштрафовал за отменённые удары: ${ac.playerScore(bob.id)}`);
+  bob.teleport({ x: 70, y: 71, z: 70 });
+  for (let index = 0; index < 25; index += 1) {
+    mc.state.blockOverrides.set(cellKey(70 + (index % 3), 79, 70), "minecraft:stone");
+    mc.breakBlock(bob, { x: 70 + (index % 3), y: 79, z: 70 });
+  }
+  expectedWarns.push(/\[anticheat\] .*Bob nuke/); // штраф намеренный: им и проверяем, что AC видит добычу
+  must(ac.playerScore(bob.id) > 0, "античит перестал видеть настоящую быструю добычу — защита глушит его обработчик");
+  // счёт чистим: следующие сценарии проверяют «игрок не помечен», и чужая метка их сломала бы
+  ac.resetState(bob.id);
+  must(ac.playerScore(bob.id) === 0, "resetState не сбросил счётчик");
+  return "25 отказов = 0, 25 добыч = штраф, resetState чист";
+});
+
+check("защита не мешает скрипту чинить спавн, а стоп-кран открывает ломку", () => {
+  const probe = probeS();
+  const build = spawnBuildProbe();
+  // «выжженная» клетка внутри круга: скриптовая правка не является событием игрока, защита
+  // обязана пропустить и починку при включённой защите, и запись в ту же клетку
+  mc.state.blockOverrides.set(cellKey(3, 79, 3), "minecraft:air");
+  const launch = build.startSpawnBuild("stable", "repair");
+  must(launch.ok, `починка не запустилась: ${JSON.stringify(launch)}`);
+  mc.tickTimes(40);
+  must(mc.state.blockOverrides.get(cellKey(3, 79, 3)) === "minecraft:polished_andesite", "защита помешала скрипту починить спавн");
+  reply("sw:meta", admin, "set", "spawnProtectEnabled", "false");
+  flush();
+  const off = mc.breakBlock(alice, { x: 0, y: 79, z: 0 });
+  must(off.cancelled === false, "стоп-кран не снял защиту: ломать спавн по-прежнему нельзя");
+  must(mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:air", "при выключенной защите дыра в полу не появилась");
+  reply("sw:meta", admin, "set", "spawnProtectEnabled", "true");
+  flush();
+  probe.forgetNotice(alice.id);
+  build.startSpawnBuild("stable", "repair");
+  mc.tickTimes(40);
+  must(mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:polished_andesite", "после включения защита помешала вернуть плиту");
+  return "починка работает при обоих положениях стоп-крана";
+});
+
+await step("экран «Моды мира» показывает защиту спавна и кричит, когда она снята", async () => {
+  const openWorld = async () => {
+    ui.shown.length = 0;
+    ui.answers.length = 0;
+    answer(pressLabel("Мета"));
+    answer(pressLabel("Моды мира"));
+    await open("sw:admin", admin);
+    return ui.shown.at(-1);
+  };
+  let screen = await openWorld();
+  must(/защита спавна: включены/.test(screen.body), `строки защиты нет в сводке: ${screen.body.slice(0, 400)}`);
+  reply("sw:meta", admin, "set", "spawnProtectEnabled", "false");
+  flush();
+  screen = await openWorld();
+  must(/защита спавна: ВНИМАНИЕ/.test(screen.body), `снятая защита не помечена в сводке: ${screen.body.slice(0, 400)}`);
+  reply("sw:meta", admin, "set", "spawnProtectEnabled", "true");
+  flush();
+  alice.teleport({ x: 4, y: 71, z: 4 });
+  bob.teleport({ x: 8, y: 71, z: 8 });
+  clearChat(alice);
+  clearChat(bob);
+  return "сводка меняется вместе со стоп-краном";
+});
+
+check("защита спавна не добавила ошибок в диспетчер событий", () => {
+  must(mc.state.dispatchErrors.length === 0, `ошибок в обработчиках: ${mc.state.dispatchErrors.length} (${mc.state.dispatchErrors.slice(-2).join(" | ")})`);
 });
 
 check("id блоков и предметов карьера существуют в 1.26.60", () => {

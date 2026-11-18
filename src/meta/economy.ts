@@ -433,7 +433,19 @@ export const sellHeld = (player: Player, amount: number): MoneyResult => {
   return { ok: true, key: "eco.sell.ok", params: { amount: items, item: typeId.replace("minecraft:", ""), total: price * items, left: Math.max(0, volumeCap - items - soldToday) } };
 };
 
-type NumericTunable = Exclude<keyof EcoTunables, "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" | "totemsEnabled">;
+const BOOLEAN_PARAMS = [
+  "queueEnabled",
+  "donorTrailsEnabled",
+  "quarryEnabled",
+  "totemsEnabled",
+  "spawnProtectEnabled",
+  "ranksEnabled",
+  "hudBarEnabled",
+  "hudSidebarEnabled",
+] as const;
+
+type BooleanTunable = (typeof BOOLEAN_PARAMS)[number];
+type NumericTunable = Exclude<keyof EcoTunables, BooleanTunable>;
 
 const NUMERIC_PARAMS: NumericTunable[] = [
   "transferFeePercent",
@@ -458,10 +470,11 @@ const normalizeTunables = (stored: Partial<EcoTunables> | undefined): EcoTunable
     const value = stored[key];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) merged[key] = value;
   }
-  if (typeof stored.queueEnabled === "boolean") merged.queueEnabled = stored.queueEnabled;
-  if (typeof stored.donorTrailsEnabled === "boolean") merged.donorTrailsEnabled = stored.donorTrailsEnabled;
-  if (typeof stored.quarryEnabled === "boolean") merged.quarryEnabled = stored.quarryEnabled;
-  if (typeof stored.totemsEnabled === "boolean") merged.totemsEnabled = stored.totemsEnabled;
+  for (const key of BOOLEAN_PARAMS) {
+    // «ключа нет в сохранённом конфиге» != «выключить»: иначе первый же сейв после
+    // обновления конфига молча гасит новый мод у тех, кто конфиг не трогал
+    if (typeof stored[key] === "boolean") merged[key] = stored[key] as boolean;
+  }
   return merged;
 };
 
@@ -470,29 +483,12 @@ export const saveTunables = (): void => {
 };
 
 export const changeEcoParam = (path: string, value: string): { ok: boolean; message: string } => {
-  if (path === "queueEnabled") {
-    tunables.queueEnabled = value === "true" || value === "1";
+  if ((BOOLEAN_PARAMS as readonly string[]).includes(path)) {
+    const key = path as BooleanTunable;
+    tunables[key] = value === "true" || value === "1";
     saveTunables();
-    audit("admin", "eco-config", path, String(tunables.queueEnabled));
-    return { ok: true, message: `queueEnabled=${tunables.queueEnabled}` };
-  }
-  if (path === "donorTrailsEnabled") {
-    tunables.donorTrailsEnabled = value === "true" || value === "1";
-    saveTunables();
-    audit("admin", "eco-config", path, String(tunables.donorTrailsEnabled));
-    return { ok: true, message: `donorTrailsEnabled=${tunables.donorTrailsEnabled}` };
-  }
-  if (path === "quarryEnabled") {
-    tunables.quarryEnabled = value === "true" || value === "1";
-    saveTunables();
-    audit("admin", "eco-config", path, String(tunables.quarryEnabled));
-    return { ok: true, message: `quarryEnabled=${tunables.quarryEnabled}` };
-  }
-  if (path === "totemsEnabled") {
-    tunables.totemsEnabled = value === "true" || value === "1";
-    saveTunables();
-    audit("admin", "eco-config", path, String(tunables.totemsEnabled));
-    return { ok: true, message: `totemsEnabled=${tunables.totemsEnabled}` };
+    audit("admin", "eco-config", key, String(tunables[key]));
+    return { ok: true, message: `${key}=${tunables[key]}` };
   }
   if (!(NUMERIC_PARAMS as string[]).includes(path)) return { ok: false, message: `неизвестный параметр: ${path}` };
   const parsed = Number(value);
@@ -530,6 +526,9 @@ export const ecoSummary = (): string[] => [
   `частицы трейлов: ${tunables.donorTrailsEnabled ? "вкл" : "выкл (nameTag и join-сообщения не тронуты)"}`,
   `авто-шахты: ${tunables.quarryEnabled ? "вкл" : "выкл (карьер не копает, буфер и добытое не тронуты)"}`,
   `тотемы: ${tunables.totemsEnabled ? "вкл" : "выкл (обряд недоступен, спасение не срабатывает, реестр цел)"}`,
+  `защита спавна: ${tunables.spawnProtectEnabled ? "вкл" : "ВЫКЛ — в лобби можно ломать и строить"}`,
+  `ранги: ${tunables.ranksEnabled ? "вкл" : "выкл (префикс снят, из кейса ранг не выпадет)"}`,
+  `HUD: строка ${tunables.hudBarEnabled ? "вкл" : "выкл"}, сайдбар ${tunables.hudSidebarEnabled ? "вкл" : "выкл"}`,
   `сделок всего: ${ledger.txCount}, в журнале: ${txLog.length}`,
 ];
 

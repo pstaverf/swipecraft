@@ -65,6 +65,8 @@ export const state = {
   blockContainers: new Map(),
   /** переопределённые блоки: сюда пишет Dimension.setBlockPermutation (карьер, сборщик спавна) */
   blockOverrides: new Map(),
+  /** scoreboard: объективы, участники и слоты отображения (world.scoreboard) */
+  scoreboard: { objectives: new Map(), nextId: 1, slots: new Map() },
   defaultSpawn: undefined,
   groundY: 70,
   nextId: 1,
@@ -127,8 +129,15 @@ const blockAt = (location) => {
     type: { id: typeId },
     above: () => blockAt({ x, y: y + 1, z }),
     below: () => blockAt({ x, y: y - 1, z }),
-    setPermutation: () => {},
+    setPermutation: (permutation) => {
+      // как в игре: setPermutation меняет блок; без этого ветки «откатить установку» и
+      // «взрыв снял клетки» в моке ничего не наблюдали бы
+      const id = permutation?.type ?? permutation?.id ?? permutation;
+      state.blockOverrides.set(key, typeof id === "string" ? id : "minecraft:air");
+    },
+    getPermutation: () => ({ typeId, getState: () => ({}), getAllStates: () => ({}) }),
     getState: () => ({}),
+    setState: () => {},
     getComponent: (id) => (id === "minecraft:inventory" ? blockInventory : undefined),
     getContainer: () => blockContainer,
     dimension: dimensionApi(state.dimensionId),
@@ -469,9 +478,166 @@ const dimensionApi = (id) => ({
   clearWeather: () => {},
 });
 
+/**
+ * Мини-scoreboard: объективы с участниками-строками (fake players) и слотами отображения.
+ * Строковые участники — ровно то, на чём держится сайдбар-таблица: в движке это единственный
+ * HUD-текст, доступный сразу всем игрокам, и он глобальный на весь мир.
+ */
+const sbIdentity = (participant) => {
+  if (typeof participant === "string") return { displayName: participant, id: 0, isValid: true, getEntity: () => undefined };
+  if (participant && typeof participant === "object" && "name" in participant) {
+    return { displayName: participant.name, id: 0, isValid: true, getEntity: () => participant };
+  }
+  return { displayName: String(participant?.id ?? participant), id: 0, isValid: true, getEntity: () => participant };
+};
+
+const makeObjective = (id, displayName) => {
+  const objective = {
+    id,
+    displayName: displayName ?? id,
+    isValid: true,
+    scores: new Map(),
+    setScore(participant, score) {
+      const identity = sbIdentity(participant);
+      objective.scores.set(identity.displayName, Math.trunc(score));
+    },
+    addScore(participant, delta) {
+      const identity = sbIdentity(participant);
+      const next = (objective.scores.get(identity.displayName) ?? 0) + Math.trunc(delta);
+      objective.scores.set(identity.displayName, next);
+      return next;
+    },
+    getScore(participant) {
+      return objective.scores.get(sbIdentity(participant).displayName);
+    },
+    getScores() {
+      return [...objective.scores.entries()].map(([participant, score]) => ({ participant: sbIdentity(participant), score }));
+    },
+    getParticipants() {
+      return [...objective.scores.keys()].map((name) => sbIdentity(name));
+    },
+    hasParticipant(participant) {
+      return objective.scores.has(sbIdentity(participant).displayName);
+    },
+    removeParticipant(participant) {
+      return objective.scores.delete(sbIdentity(participant).displayName);
+    },
+  };
+  return objective;
+};
+
+const scoreboardApi = () => ({
+  addObjective(objectiveId, displayName) {
+    if (state.scoreboard.objectives.has(objectiveId)) throw new Error(`mock: объектив ${objectiveId} уже есть`);
+    const objective = makeObjective(objectiveId, displayName);
+    state.scoreboard.objectives.set(objectiveId, objective);
+    return objective;
+  },
+  getObjective(objectiveId) {
+    return state.scoreboard.objectives.get(typeof objectiveId === "string" ? objectiveId : objectiveId?.id);
+  },
+  getObjectives: () => [...state.scoreboard.objectives.values()],
+  getParticipants: () => [...new Set([...state.scoreboard.objectives.values()].flatMap((objective) => [...objective.scores.keys()]))].map((name) => sbIdentity(name)),
+  removeObjective(objectiveId) {
+    const id = typeof objectiveId === "string" ? objectiveId : objectiveId?.id;
+    for (const [slot, entry] of state.scoreboard.slots) {
+      if (entry.objective.id === id) state.scoreboard.slots.delete(slot);
+    }
+    return state.scoreboard.objectives.delete(id);
+  },
+  getObjectiveAtDisplaySlot(displaySlotId) {
+    return state.scoreboard.slots.get(displaySlotId);
+  },
+  setObjectiveAtDisplaySlot(displaySlotId, options) {
+    const previous = state.scoreboard.slots.get(displaySlotId)?.objective;
+    state.scoreboard.slots.set(displaySlotId, { objective: options.objective, sortOrder: options.sortOrder ?? 0 });
+    return previous;
+  },
+  clearObjectiveAtDisplaySlot(displaySlotId) {
+    const previous = state.scoreboard.slots.get(displaySlotId)?.objective;
+    state.scoreboard.slots.delete(displaySlotId);
+    return previous;
+  },
+});
+
+/** Как игрок реально увидит строки слота: ObjectiveSortOrder.Ascending = 0, Descending = 1. */
+export const scoreboardLines = (displaySlotId = "Sidebar") => {
+  const entry = state.scoreboard.slots.get(displaySlotId);
+  if (!entry) return [];
+  const rows = entry.objective.getScores();
+  rows.sort((left, right) => (entry.sortOrder === 0 ? left.score - right.score : right.score - left.score));
+  return rows.map((row) => row.participant.displayName);
+};
+
+export const scoreboardTitle = (displaySlotId = "Sidebar") => state.scoreboard.slots.get(displaySlotId)?.objective?.displayName;
+
+/** Игрок бьёт блок: before можно отменить, after наступает только если не отменили. */
+export const breakBlock = (player, location) => {
+  const block = blockAt(location);
+  const before = { block, dimension: player.dimension, player, itemStack: undefined, cancel: false };
+  registry.get("before:playerBreakBlock")?.dispatch(before);
+  if (before.cancel) return { cancelled: true, placed: block.typeId };
+  state.blockOverrides.set(`${block.x}:${block.y}:${block.z}`, "minecraft:air");
+  registry.get("after:playerBreakBlock")?.dispatch({
+    block,
+    dimension: player.dimension,
+    player,
+    // limits.ts читает event.brokenBlockPermutation.type.id — без `type` был бы TypeError
+    brokenBlockPermutation: { typeId: block.typeId, type: { id: block.typeId } },
+    initialBlockPermutation: { typeId: block.typeId, type: { id: block.typeId } },
+    experienceDropped: true,
+  });
+  return { cancelled: false, placed: "minecraft:air" };
+};
+
+/** Игрок ставит блок: событие after — блок уже стоит, защита может только откатить. */
+export const placeBlock = (player, location, typeId = "minecraft:cobblestone") => {
+  const key = `${Math.floor(location.x)}:${Math.floor(location.y)}:${Math.floor(location.z)}`;
+  state.blockOverrides.set(key, typeId);
+  const block = blockAt(location);
+  registry.get("after:playerPlaceBlock")?.dispatch({ block, dimension: player.dimension, player, headLocation: { ...location } });
+  return { placed: blockAt(location).typeId };
+};
+
+/** Взрыв: список затронутых блоков слушатели могут сократить или отменить всё. */
+export const explode = (at, options = {}) => {
+  const coords = options.blocks ?? [
+    { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) },
+    { x: Math.floor(at.x) + 1, y: Math.floor(at.y), z: Math.floor(at.z) },
+    { x: Math.floor(at.x) - 1, y: Math.floor(at.y), z: Math.floor(at.z) },
+  ];
+  let impacted = coords.map((spot) => blockAt(spot));
+  const event = {
+    dimension: dimensionApi(options.dimensionId ?? state.dimensionId),
+    source: options.source,
+    getImpactedBlocks: () => impacted,
+    setImpactedBlocks: (blocks) => {
+      impacted = [...blocks];
+    },
+    cancel: false,
+  };
+  registry.get("before:explosion")?.dispatch(event);
+  const survivors = event.cancel ? [] : impacted;
+  for (const block of survivors) state.blockOverrides.set(`${block.x}:${block.y}:${block.z}`, "minecraft:air");
+  return { cancelled: event.cancel, destroyed: survivors.map((block) => ({ x: block.x, y: block.y, z: block.z })) };
+};
+
+/** Использование предмета (ведро и прочее): before отменяется полностью. */
+export const useItem = (player, itemStack) => {
+  const event = { source: player, itemStack, cancel: false };
+  registry.get("before:itemUse")?.dispatch(event);
+  return { cancelled: event.cancel };
+};
+
+export const DisplaySlotId = { BelowName: "BelowName", List: "List", Sidebar: "Sidebar" };
+export const ObjectiveSortOrder = { Ascending: 0, Descending: 1 };
+
 export const world = {
   beforeEvents: namespaced("before"),
   afterEvents: namespaced("after"),
+  get scoreboard() {
+    return scoreboardApi();
+  },
   setDefaultSpawnLocation: (location) => {
     state.defaultSpawn = { x: location?.x, y: location?.y, z: location?.z };
   },
