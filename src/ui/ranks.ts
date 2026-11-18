@@ -4,7 +4,7 @@ import { safeRunAsync } from "../kernel/guard";
 import { t } from "../kernel/i18n";
 import { CURRENCY, RANK_CASE } from "../meta/config";
 import { getTunables } from "../meta/economy";
-import { rankLines, rankOddsLines, rankStatus, rollRanks } from "../meta/ranks";
+import { rankLines, rankOddsLines, rankStatus, rankTopLines, rollRanks } from "../meta/ranks";
 import { busyNote } from "./common";
 import { openMenu } from "./menu";
 import "./messages";
@@ -21,6 +21,8 @@ export const openRanks = async (player: Player): Promise<void> => {
     const gated = !getTunables().ranksEnabled;
     const body = [
       ...rankStatus(player),
+      "",
+      ...rankTopLines(player),
       "",
       t(player, "rank.ladder"),
       ...rankLines(player),

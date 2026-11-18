@@ -2619,6 +2619,20 @@ await step("меню: «Ранги» открывает кейс, крутка �
   must(form && form.title.includes("Ранги"), `кейс рангов не открылся: ${titles}`);
   must(form.buttons.length === 3, `кнопок в кейсе рангов: ${form.buttons.length} (${form.buttons.join(" | ")})`);
   must(form.body.includes("Лестница"), `тела нет: ${form.body.slice(0, 120)}`);
+  // «топ по рангам онлайн» — единственное, куда доехал rankLeaders: пустой список тут
+  // означал бы, что функция никем не вызывается и протухла бы молча
+  // второму игроку специально выдаётся младший ранг: с одним элементом список
+  // упорядочен «сам собой», и проверка порядка стала бы вакуумной
+  ranksProbe().grantRank(bob, "bronze", { actor: "стаб-тест" });
+  const leaders = ranksProbe().rankTopLines(alice).join(" | ");
+  must(/1\. .*(Мифический|Легенда|Элитный)/.test(leaders.replace(/§./g, "")), `топ по рангам не на месте: ${leaders}`);
+  must(form.body.includes("Сейчас онлайн"), `в теле кейса нет строки про топ: ${form.body.slice(0, 200)}`);
+  const ordered = ranksProbe().rankLeaders(5);
+  must(ordered.length >= 2, `в топе по рангам ${ordered.length} записей — тесту не на чем проверять порядок`);
+  for (let index = 1; index < ordered.length; index += 1) {
+    must(ordered[index - 1].order >= ordered[index].order, `rankLeaders не по убыванию: ${ordered.map((row) => row.order).join(", ")}`);
+  }
+  must(ordered[0].name === "Alice" && ordered[1].name === "Bob", `порядок в топе по рангам: ${ordered.map((row) => row.name).join(", ")}`);
   must(/шанс: \d/.test(form.body) === false || form.body.includes("не выпадает"), `в лестнице нет ни шансов, ни пометок: ${form.body.slice(0, 240)}`);
   await settle();
   const text = chatOf(alice).join(" / ");

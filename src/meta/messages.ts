@@ -264,6 +264,8 @@ const ru: Record<string, string> = {
   "rank.tag.line": "Префикс над головой: {tag}",
   "rank.tag.none": "Префикса над головой нет",
   "rank.rolled": "Круток: {count}, сгорело {paid} ₡, вернулось {refunded} ₡",
+  "rank.top.title": "Сейчас онлайн, старшие ранги:",
+  "rank.top.empty": "Онлайн нет никого с рангом.",
 };
 
 const en: Record<string, string> = {
@@ -530,6 +532,8 @@ const en: Record<string, string> = {
   "rank.tag.line": "Name tag prefix: {tag}",
   "rank.tag.none": "No name tag prefix",
   "rank.rolled": "Rolls: {count}, burned {paid} coins, refunded {refunded} coins",
+  "rank.top.title": "Online now, highest ranks:",
+  "rank.top.empty": "Nobody online has a rank.",
 };
 
 addDict("ru", ru);

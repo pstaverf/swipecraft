@@ -265,6 +265,17 @@ export const rankLeaders = (limit: number): { name: string; label: string; order
   return rows.slice(0, Math.max(0, limit));
 };
 
+/**
+ * «Топ по рангам» онлайн. В сайдбар это не положить (одна сортировка — по числу, и
+ * два разных рейтинга в одном списке читаются как каша), поэтому список живёт на экране
+ * кейса: там он не конфликтует с топом по монетам.
+ */
+export const rankTopLines = (player: Player): string[] => {
+  const leaders = rankLeaders(3);
+  if (leaders.length === 0) return [`§7${t(player, "rank.top.empty")}`];
+  return [`§d${t(player, "rank.top.title")}`, ...leaders.map((row, index) => `§f${index + 1}. §d${row.label}§r — ${row.name}`)];
+};
+
 export const rankStatus = (player: Player): string[] => {
   const meta = metaOf(player);
   const best = bestRankOf(player);
