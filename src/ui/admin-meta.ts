@@ -19,6 +19,7 @@ import { marketRemove, marketSizeBytes, marketStats } from "../meta/market";
 import { caseStatsLines } from "../meta/cases";
 import { donorReport, queueReport, releaseAll } from "../meta/donations";
 import { openDonAdmin } from "./donations";
+import { openWorldMods } from "./world";
 import { openAdminPanel } from "./admin";
 import { marketAdminList } from "./market";
 
@@ -53,6 +54,7 @@ const openEcoParams = async (player: Player): Promise<void> => {
       .textField(t(player, "ui.value"), "5", { defaultValue: String(tunables.transferFeePercent) })
       .toggle(t(player, "ui.admin.eco.queue"), { defaultValue: tunables.queueEnabled })
       .toggle(t(player, "ui.admin.eco.trails"), { defaultValue: tunables.donorTrailsEnabled })
+      .toggle(t(player, "admin.world.quarry.toggle"), { defaultValue: tunables.quarryEnabled })
       .submitButton(t(player, "ui.confirm"));
 
     const response = await form.show(player);
@@ -69,6 +71,9 @@ const openEcoParams = async (player: Player): Promise<void> => {
     report(player, text(metaChangeParam(path, String(values[1] ?? "")).message));
     report(player, text(metaChangeParam("queueEnabled", values[2] ? "true" : "false").message));
     report(player, text(metaChangeParam("donorTrailsEnabled", values[3] ? "true" : "false").message));
+    // четвёртый тумблер мог не прийти в ответе (форма открыта до обновления конфига) —
+    // «undefined» читаем как «не трогать», а не как «выключить авто-шахты молча»
+    if (values[4] !== undefined) report(player, text(metaChangeParam("quarryEnabled", values[4] ? "true" : "false").message));
     player.sendMessage(ecoSummary().slice(0, 4).join("\n"));
   });
 };
@@ -280,26 +285,28 @@ const openQueueAdmin = async (player: Player): Promise<void> => {
   });
 };
 
+const META_ADMIN_ENTRIES: readonly { readonly key: string; readonly action: string }[] = [
+  { key: "admin.meta.status", action: "status" },
+  { key: "ui.admin.eco", action: "eco" },
+  { key: "ui.admin.clans", action: "clans" },
+  { key: "ui.admin.market", action: "market" },
+  { key: "ui.admin.cases", action: "cases" },
+  { key: "ui.admin.don", action: "don" },
+  { key: "ui.admin.queue", action: "queue" },
+  { key: "ui.admin.world", action: "world" },
+  { key: "ui.menu", action: "back" },
+];
+
 export const openMetaAdmin = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:admin:meta", async () => {
-    const actions = ["status", "eco", "clans", "market", "cases", "don", "queue", "back"];
-    const form = new ActionFormData()
-      .title(t(player, "ui.admin.meta"))
-      .body(metaAdminLines().join("\n").slice(0, 1800))
-      .button(t(player, "admin.meta.status"))
-      .button(t(player, "ui.admin.eco"))
-      .button(t(player, "ui.admin.clans"))
-      .button(t(player, "ui.admin.market"))
-      .button(t(player, "ui.admin.cases"))
-      .button(t(player, "ui.admin.don"))
-      .button(t(player, "ui.admin.queue"))
-      .button(t(player, "ui.menu"));
+    const form = new ActionFormData().title(t(player, "ui.admin.meta")).body(metaAdminLines().join("\n").slice(0, 1800));
+    for (const entry of META_ADMIN_ENTRIES) form.button(t(player, entry.key));
     const response = await form.show(player);
     if (response.canceled || response.selection === undefined) {
       busyNote(player, response);
       return;
     }
-    switch (actions[response.selection]) {
+    switch (META_ADMIN_ENTRIES[response.selection]?.action) {
       case "status":
         player.sendMessage(metaStatusLines().join("\n"));
         return;
@@ -320,6 +327,9 @@ export const openMetaAdmin = async (player: Player): Promise<void> => {
         return;
       case "queue":
         await openQueueAdmin(player);
+        return;
+      case "world":
+        await openWorldMods(player);
         return;
       default:
         await openAdminPanel(player);

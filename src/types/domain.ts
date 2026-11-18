@@ -138,6 +138,44 @@ export interface PlayerMeta {
   donBlockReason: string;
 }
 
+export interface QuarryDrop {
+  typeId: string;
+  amount: number;
+}
+
+export interface QuarryRow {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  x: number;
+  z: number;
+  topY: number;
+  createdAt: number;
+  season: number;
+  /** индекс следующей ячейки в детерминированном порядке сканирования */
+  scan: number;
+  mined: number;
+  skipped: number;
+  /** буфер заполнен: копать некуда, пока игрок не заберёт добычу */
+  full: boolean;
+  buffer: QuarryDrop[];
+}
+
+export type SpawnBuildMode = "build" | "repair";
+
+export interface SpawnBuildState {
+  mode: SpawnBuildMode;
+  /** индекс следующей ячейки blueprint'а в очереди на запись */
+  cursor: number;
+  total: number;
+  written: number;
+  running: boolean;
+  startedAt: number;
+  lastCheckAt: number;
+  missing: number;
+  season: number;
+}
+
 export interface EcoTunables {
   transferFeePercent: number;
   marketCommissionPercent: number;
@@ -154,6 +192,8 @@ export interface EcoTunables {
   queueSoftCap: number;
   queueReleaseAt: number;
   donorTrailsEnabled: boolean;
+  /** стоп-кран авто-шахты: карьеры перестают копать на следующем такте */
+  quarryEnabled: boolean;
 }
 
 export interface EcoAccount {

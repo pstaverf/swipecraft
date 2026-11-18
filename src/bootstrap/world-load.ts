@@ -8,9 +8,12 @@ import { flushAudit, initAudit } from "../security/audit";
 import { initEvents } from "../events/manager";
 import { initMeta } from "../meta/index";
 import { initBorder } from "../world/border";
+import { flushQuarries, initQuarry } from "../world/quarry";
+import { initSpawnBuild, isSpawnMenuBlock } from "../world/spawnbuild";
+import { openMenu } from "../ui/menu";
 import { initLimits } from "../world/limits";
 import { applyWorldRules } from "../world/rules";
-import { initSeason } from "../world/season";
+import { getSeason, initSeason } from "../world/season";
 import { initSpawn } from "../world/spawn";
 
 let booted = false;
@@ -26,10 +29,20 @@ const boot = (): void => {
   initBorder();
   initSpawn();
   initLimits();
+  initSpawnBuild(getSeason().index);
+  initQuarry(getSeason().index);
   initAntiDupe();
   initAnticheat();
   initMeta();
   initEvents();
+
+  // алтарь спавна: тот же blueprint, что строит площадь, даёт игроку вход в меню без чата
+  world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
+    if (!isSpawnMenuBlock(event.block)) return;
+    event.cancel = true;
+    const player = event.player;
+    void openMenu(player);
+  });
 
   registerProfileTasks(registerTask);
   registerTask("audit-flush", 600, 10, flushAudit);
@@ -54,6 +67,8 @@ world.afterEvents.playerLeave.subscribe((event) => {
   forgetPlayer(event.playerId);
   resetState(event.playerId);
   flushAudit();
+  // карьер всё равно встанет на паузе (копаем только онлайн), но добычу терять нельзя
+  flushQuarries();
 });
 
 world.afterEvents.playerJoin.subscribe(() => {

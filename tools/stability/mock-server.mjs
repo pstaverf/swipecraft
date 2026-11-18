@@ -63,6 +63,9 @@ export const state = {
   sentMessages: [],
   hazardAt: new Set(),
   blockContainers: new Map(),
+  /** переопределённые блоки: сюда пишет Dimension.setBlockPermutation (карьер, сборщик спавна) */
+  blockOverrides: new Map(),
+  defaultSpawn: undefined,
   groundY: 70,
   nextId: 1,
   dimensionId: "minecraft:overworld",
@@ -107,8 +110,11 @@ const blockAt = (location) => {
   const z = Math.floor(location?.z ?? 0);
   const blockContainer = blockContainerFor(x, y, z);
   const blockInventory = { container: blockContainer, size: 27 };
-  const hazard = state.hazardAt.has(`${x}:${y}:${z}`);
-  const air = y > state.groundY;
+  const key = `${x}:${y}:${z}`;
+  const hazard = state.hazardAt.has(key);
+  const override = state.blockOverrides.get(key);
+  const air = override !== undefined ? override === "minecraft:air" : y > state.groundY;
+  const typeId = hazard ? "minecraft:lava" : (override ?? (air ? "minecraft:air" : y === state.groundY ? "minecraft:grass" : "minecraft:stone"));
   return {
     x,
     y,
@@ -116,9 +122,9 @@ const blockAt = (location) => {
     location: { x, y, z },
     isAir: air && !hazard,
     isLiquid: hazard,
-    isSolidBlocking: !air,
-    typeId: hazard ? "minecraft:lava" : air ? "minecraft:air" : y === state.groundY ? "minecraft:grass" : "minecraft:stone",
-    type: { id: hazard ? "minecraft:lava" : air ? "minecraft:air" : y === state.groundY ? "minecraft:grass" : "minecraft:stone" },
+    isSolidBlocking: !air && !hazard,
+    typeId,
+    type: { id: typeId },
     above: () => blockAt({ x, y: y + 1, z }),
     below: () => blockAt({ x, y: y - 1, z }),
     setPermutation: () => {},
@@ -440,7 +446,12 @@ const dimensionApi = (id) => ({
   },
   getTimeOfDay: () => state.timeOfDay,
   createExplosion: () => {},
-  setBlockPermutation: () => {},
+  setBlockPermutation: (location, permutation) => {
+    const x = Math.floor(location?.x ?? 0);
+    const y = Math.floor(location?.y ?? 0);
+    const z = Math.floor(location?.z ?? 0);
+    state.blockOverrides.set(`${x}:${y}:${z}`, permutation?.id ?? "minecraft:air");
+  },
   setWeather: () => {},
   clearWeather: () => {},
 });
@@ -448,6 +459,10 @@ const dimensionApi = (id) => ({
 export const world = {
   beforeEvents: namespaced("before"),
   afterEvents: namespaced("after"),
+  setDefaultSpawnLocation: (location) => {
+    state.defaultSpawn = { x: location?.x, y: location?.y, z: location?.z };
+  },
+  getDefaultSpawnLocation: () => state.defaultSpawn ?? { x: 0.5, y: state.groundY + 1, z: 0.5 },
   getDimension: (id) => dimensionApi(id ?? state.dimensionId),
   getAllPlayers: () => state.players.slice(),
   getPlayers: () => state.players.slice(),

@@ -1,4 +1,5 @@
 import * as mc from "./mock-server.mjs";
+import { MinecraftBlockTypes, MinecraftItemTypes } from "@minecraft/vanilla-data";
 import { answer, shownTitles, ui } from "./mock-ui.mjs";
 
 const DONATIONS_GIFT_ROLLS = 1;
@@ -175,7 +176,7 @@ const wallet = (id) => meta()[id];
 scenario("boot");
 
 check("все команды слоя зарегистрированы", () => {
-  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta"];
+  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta", "sw:quarry", "sw:spawn"];
   const missing = expected.filter((name) => !commands.has(name));
   must(missing.length === 0, `нет команд: ${missing.join(", ")}`);
   return `${expected.length}`;
@@ -1197,7 +1198,7 @@ await step("главное меню: подписи кнопок и перехо
   await open("sw:menu", alice);
   const form = lastForm();
   must(form && form.title.includes("Swipecraft"), `меню не открылось: ${shownTitles().join(" > ")}`);
-  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
+  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Авто-шахта", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
   const missing = expected.filter((part) => !form.buttons.some((label) => label.includes(part)));
   must(missing.length === 0, `нет пунктов: ${missing.join(", ")} (${form.buttons.join(" | ")})`);
   must(form.buttons.length === expected.length, `игроку без admin показали ${form.buttons.length} кнопок вместо ${expected.length}`);
@@ -1405,6 +1406,318 @@ await step("форма «Настройки античита» переведе�
   answer(pressLabel("Language / Язык"));
   await open("sw:menu", admin);
   return `${form.controls.length} полей, 2 отказа показано`;
+});
+
+scenario("mods (авто-шахта и сборщик спавна)");
+
+const QUARRY_SPOT = { x: 200, y: 60, z: 200 };
+const cellKey = (x, y, z) => `${x}:${y}:${z}`;
+const claimRow = () => (readJson("sw:quarry")?.claims ?? [])[0];
+const QUARRY_CELLS = 11 * 11 * 8;
+const CONFIG_BUFFER_STACKS = 8;
+
+check("спавн собран blueprint'ом, точка возрождения указывает на него", () => {
+  const built = [...mc.state.blockOverrides.entries()];
+  must(built.length > 700, `записано ячеек: ${built.length} — сборщик спавна не отработал`);
+  must(mc.state.blockOverrides.get(cellKey(0, 79, 0)) === "minecraft:polished_andesite", "под точкой возрождения не андезит");
+  must(mc.state.blockOverrides.get(cellKey(0, 81, -4)) === "minecraft:gold_block", "алтарь меню не построен");
+  const spawn = mc.state.defaultSpawn;
+  must(spawn && spawn.y === 80 && spawn.x === 0.5, `точка возрождения мира: ${JSON.stringify(spawn)}`);
+  return `${built.length} ячеек, алтарь и defaultSpawn на месте`;
+});
+
+await step("у спавна копать нельзя", () => {
+  alice.teleport({ x: 4, y: 71, z: 4 });
+  const text = reply("sw:quarry", alice, "start");
+  must(/Вокруг спавна копать нельзя/.test(text), `карьер у лобби разрешили: ${text}`);
+  return text.slice(0, 90);
+});
+
+await step("запуск карьера: списание и запись в dynamic properties", async () => {
+  await mintTo("Alice", 3000);
+  alice.teleport(QUARRY_SPOT);
+  const before = wallet("p-alice").coins ?? 0;
+  const text = reply("sw:quarry", alice, "start");
+  must(/✓ Карьер #/.test(text), `запуск не удался: ${text}`);
+  const claim = claimRow();
+  must(claim, "в sw:quarry нет записи");
+  must(claim.x === QUARRY_SPOT.x && claim.topY === QUARRY_SPOT.y - 1, `площадка: ${claim.x},${claim.z} y${claim.topY}`);
+  must(claim.mined === 0 && claim.scan === 0 && claim.buffer.length === 0, `свежий карьер не пуст: ${JSON.stringify(claim)}`);
+  const after = wallet("p-alice").coins ?? 0;
+  must(before - after === 1200, `списание за слот: ${before} → ${after}`);
+  return `#${claim.id} y${claim.topY}, −1200 ₡`;
+});
+
+await step("карьер не грефер: чужой блок в толще породы остаётся нетронутым", () => {
+  const probe = globalThis.__swipecraftProbe.quarry;
+  const shape = probe.quarryShape();
+  must(shape.cells === 11 * 11 * 8, `объём карьера ${shape.cells} вместо 968`);
+  const claim = claimRow();
+  const reach = (shape.side - 1) / 2 + 1;
+  const dugInVolume = (topY) => {
+    let total = 0;
+    for (const [key, value] of mc.state.blockOverrides.entries()) {
+      if (value !== "minecraft:air") continue;
+      const [x, y, z] = key.split(":").map(Number);
+      if (Math.abs(x - claim.x) > reach || Math.abs(z - claim.z) > reach) continue;
+      if (y > topY || y < topY - shape.depth + 1) continue;
+      total += 1;
+    }
+    return total;
+  };
+  // занимаем блоком игрока ровно ту ячейку, которую карьер прочитает следующей
+  const spot = probe.quarryCellAt({ x: claim.x, z: claim.z, topY: claim.topY }, claim.scan);
+  mc.state.blockOverrides.set(cellKey(spot.x, spot.y, spot.z), "minecraft:diamond_block");
+  const dugBefore = dugInVolume(claim.topY);
+  must(dugBefore === 0, `до запуска в области уже ${dugBefore} вырытых блоков`);
+  mc.tickTimes(20);
+  const row = claimRow();
+  must(mc.state.blockOverrides.get(cellKey(spot.x, spot.y, spot.z)) === "minecraft:diamond_block", "карьер снёс блок игрока");
+  must(row.skipped >= 1, `пропусков ${row.skipped} — чужой блок даже не рассмотрен`);
+  must(row.mined >= 1, `добыто ${row.mined}`);
+  must(dugInVolume(claim.topY) - dugBefore === row.mined, `в области вырыто ${dugInVolume(claim.topY)} блоков, а добыто ${row.mined}`);
+  const status = reply("sw:quarry", alice, "status");
+  must(/пропущено [1-9]/.test(status), `в статусе нет пропусков: ${status}`);
+  return `добыто ${row.mined}, пропущено ${row.skipped}, чужой блок цел`;
+});
+
+await step("добыча выдаётся в инвентарь, а не исчезает", () => {
+  const claim = claimRow();
+  const buffered = claim.buffer.reduce((sum, row) => sum + row.amount, 0);
+  must(buffered > 0, `буфер пуст при добыче ${claim.mined}`);
+  const text = reply("sw:quarry", alice, "collect");
+  must(/Выдано \d+ предметов/.test(text), `раздача не описана: ${text}`);
+  const given = Number(text.match(/Выдано (\d+)/)[1]);
+  must(given === buffered, `выдано ${given} из ${buffered}`);
+  must(countItem(alice, "minecraft:cobblestone") >= given, "в инвентаре меньше, чем выдано");
+  must(claimRow().buffer.length === 0, "буфер не очищен");
+  return `${given} булыжника`;
+});
+
+await step("экран карьера и админ-экран модов: подписи, переходы, стоп-кран из формы", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Авто-шахта"));
+  await open("sw:menu", alice);
+  const form = lastForm();
+  must(form.title.includes("Авто-шахта"), `открылась не карьерная форма: ${form.title}`);
+  must(form.body.includes("Добыто"), `в теле формы нет прогресса: ${form.body.slice(0, 140)}`);
+  for (const part of ["Забрать добычу", "Перенестись к карьеру", "Закрыть карьер", "Как это работает", "В главное меню"]) {
+    must(form.buttons.some((label) => label.includes(part)), `нет кнопки «${part}»: ${form.buttons.join(" | ")}`);
+  }
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Забрать добычу"));
+  await open("sw:quarry", alice, "ui");
+  must(/Буфер пуст/.test(chatOf(alice).join(" / ")), `пустой буфер не описан: ${chatOf(alice).join(" / ")}`);
+  mc.tickTimes(220);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Перенестись к карьеру"));
+  await open("sw:quarry", alice, "ui");
+  const teleported = chatOf(alice).join(" / ");
+  must(/Перенёс к карьеру #|Приземляться некуда/.test(teleported), `перенос не описан: ${teleported}`);
+  const landed = /Перенёс к карьеру/.test(teleported);
+  const claimForLanding = claimRow();
+  const landingY = Math.round(alice.location.y);
+  must(landed, "после 220 тиков полость должна была открыться");
+  must(alice.location.x === 200.5 && Math.abs(alice.location.z - 200.5) < 1, `не на площадку: ${JSON.stringify(alice.location)}`);
+  must(landingY <= claimForLanding.topY && landingY >= claimForLanding.topY - 8 + 1, `посадка вне объема карьера: y=${landingY}, topY=${claimForLanding.topY}`);
+  must(mc.state.blockOverrides.get(cellKey(200, landingY, 200)) === "minecraft:air", `посадка в непройченную клетку (y=${landingY}) — удушье`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Как это работает"));
+  await open("sw:quarry", alice, "ui");
+  must(/Оффлайн — пауза/.test(chatOf(alice).join(" / ")), `правила карьера не распечатаны: ${chatOf(alice).join(" / ").slice(0, 120)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  await open("sw:admin", admin);
+  const worldForm = ui.shown.at(-1) ?? lastForm();
+  must(worldForm.title.includes("Моды мира"), `админ-экран не открылся: ${worldForm.title}`);
+  must(worldForm.body.includes("карьеры:") && worldForm.body.includes("спавн:"), `сводка мод неполная: ${worldForm.body.slice(0, 200)}`);
+  for (const part of ["Карьеры", "Спавн", "Стоп-краны модов"]) must(worldForm.buttons.some((label) => label.includes(part)), `нет действия «${part}»`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Стоп-краны модов"));
+  answer(fillModal(true, true, false));
+  await open("sw:admin", admin);
+  const toggled = chatOf(admin).join(" / ");
+  must(/quarryEnabled=false/.test(toggled), `стоп-кран из формы не переключился: ${toggled.slice(-160)}`);
+  must(readJson("sw:eco:cfg")?.quarryEnabled === false, "стоп-кран не уехал в sw:eco:cfg");
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Стоп-краны модов"));
+  answer(fillModal(true, true));
+  await open("sw:admin", admin);
+  const modal = ui.shown.at(-1);
+  must(modal.controls.length === 3, `тумблеров в форме: ${modal.controls.length}`);
+  must(modal.controls[2].config?.defaultValue === false, `тумблер не показывает текущее состояние: ${JSON.stringify(modal.controls[2])}`);
+  must(/Ни один флаг не изменился/.test(chatOf(admin).join(" / ")), `форма солгала про изменения: ${chatOf(admin).join(" / ")}`);
+  reply("sw:meta", admin, "set", "quarryEnabled", "true");
+  flush();
+  must(readJson("sw:eco:cfg")?.quarryEnabled === true, "стоп-кран не вернулся в включённое состояние");
+  must(mc.state.blockOverrides.get(cellKey(0, 79, 0)) === "minecraft:polished_andesite", "пол спавна пострадал от переноса");
+  return `${form.buttons.length} кнопок на экране карьера, стоп-кран из формы переключён`;
+});
+
+await step("стоп-кран quarryEnabled реально останавливает копание", () => {
+  const before = claimRow().mined;
+  reply("sw:meta", admin, "set", "quarryEnabled", "false");
+  mc.tickTimes(120);
+  const stopped = claimRow().mined;
+  must(before === stopped, `стоп-кран не сработал: ${before} → ${stopped}`);
+  admin.teleport({ x: 900, y: 60, z: 900 });
+  const refused = reply("sw:quarry", admin, "start");
+  must(/Авто-шахты выключены/.test(refused), `новый карьер при выключенном моде разрешили: ${refused}`);
+  reply("sw:meta", admin, "set", "quarryEnabled", "true");
+  mc.tickTimes(20);
+  const resumed = claimRow().mined;
+  must(resumed > stopped, `после включения копания нет: ${stopped} → ${resumed}`);
+  return `${before} → (стоп) ${stopped} → (вкл) ${resumed}`;
+});
+
+await step("полный буфер стопорит копание, collect разблокирует его снова", () => {
+  mc.tickTimes(1520);
+  const claim = claimRow();
+  must(claim, "карьер исчез из sw:quarry раньше времени");
+  const stacks = Math.ceil(claim.buffer.reduce((sum, row) => sum + row.amount, 0) / 64);
+  must(claim.full === true, `флаг полного буфера не выставлен (стопки ${stacks})`);
+  const status = reply("sw:quarry", alice, "status");
+  must(/буфер полон/.test(status), `статус не говорит о полном буфере: ${status}`);
+  must(stacks >= CONFIG_BUFFER_STACKS, `в буфере ${stacks} стопок, ждали ≥ ${CONFIG_BUFFER_STACKS}`);
+  const frozen = claim.mined;
+  mc.tickTimes(60);
+  must(claimRow().mined === frozen, `при полном буфере копание продолжилось: ${frozen} → ${claimRow().mined}`);
+  const text = reply("sw:quarry", alice, "collect");
+  const given = Number(text.match(/Выдано (\d+)/)?.[1] ?? 0);
+  must(given >= CONFIG_BUFFER_STACKS * 64 - 64, `раздача мелкая: ${text}`);
+  must(countItem(alice, "minecraft:cobblestone") >= given - 64, "инвентарь не принял добычу");
+  mc.tickTimes(20);
+  must(claimRow().mined > frozen, `после collect копание не возобновилось: ${frozen}`);
+  return `${frozen} ячеек → стопор → ${given} шт. забрано → ${claimRow().mined}`;
+});
+
+await step("объём вычерпан: добыча живёт до collect, слот закрывает игрок", () => {
+  const before = claimRow().mined;
+  let guard = 0;
+  // полные буферы разгружаем по ходу: цель шага — конец объёма, а не бесконечная пауза
+  while (guard < 8 && claimRow() && claimRow().scan < QUARRY_CELLS) {
+    mc.tickTimes(600);
+    guard += 1;
+    const row = claimRow();
+    if (row?.full) reply("sw:quarry", alice, "collect");
+  }
+  const claim = claimRow();
+  must(claim, "карьер удалился сам — буфер с добычей пропал бы вместе с записью");
+  must(guard < 8, `объём не вычерпан за ${guard} прогонов`);
+  must(claim.scan >= QUARRY_CELLS, `скан ${claim.scan} < ${QUARRY_CELLS} при вычерпанном объёме`);
+  const status = reply("sw:quarry", alice, "status");
+  must(/вычерпан/.test(status), `статус не показывает конец объёма: ${status}`);
+  const buffered = claim.buffer.reduce((sum, row) => sum + row.amount, 0);
+  must(buffered > 0, `буфер пуст, а добыто ${claim.mined} — остаток добычи потерян`);
+  mc.tickTimes(40);
+  must(claimRow().mined === claim.mined, `после вычерпывания копать продолжило: ${claim.mined} → ${claimRow().mined}`);
+  const text = reply("sw:quarry", alice, "collect");
+  const given = Number(text.match(/Выдано (\d+)/)?.[1] ?? 0);
+  must(given === buffered, `забрал ${given} из ${buffered}`);
+  must(claim.mined + claim.skipped === QUARRY_CELLS, `добыто ${claim.mined} + пропущено ${claim.skipped} ≠ ${QUARRY_CELLS}`);
+  reply("sw:quarry", alice, "close");
+  must((readJson("sw:quarry")?.claims ?? []).length === 0, "слот не освобождён после закрытия");
+  return `${claim.mined} ячеек из ${QUARRY_CELLS} (было ${before}), остаток ${given} шт. роздан`;
+});
+
+await step("дистанция, занятый слот и освобождение карьера админом", async () => {
+  alice.teleport(QUARRY_SPOT);
+  await mintTo("Alice", 1500);
+  const created = reply("sw:quarry", alice, "start");
+  must(/✓ Карьер #/.test(created), `второй карьер не запустился: ${created}`);
+  const again = reply("sw:quarry", alice, "start");
+  must(/уже есть карьер/.test(again), `двойной слот не отклонён: ${again}`);
+  admin.teleport({ x: QUARRY_SPOT.x + 5, y: 60, z: QUARRY_SPOT.z });
+  const near = reply("sw:quarry", admin, "start");
+  must(/Слишком близко к чужому карьеру/.test(near), `дистанция 20 блоков не проверена: ${near}`);
+  mc.tickTimes(20);
+  const list = reply("sw:quarry", admin, "list");
+  must(/роет|буфер полон|вычерпан/.test(list), `в админ-списке нет статуса: ${list}`);
+  clearChat(alice);
+  const released = reply("sw:quarry", admin, "release", claimRow().id);
+  must(/освободил карьер/.test(released), `release не сработал: ${released}`);
+  must((readJson("sw:quarry")?.claims ?? []).length === 0, "запись осталась после release");
+  const notice = chatOf(alice).join(" / ");
+  must(/Администратор освободил карьер/.test(notice), `владельцу не сказали про release: ${notice.slice(-140)}`);
+  return `${list.split("\n")[0].slice(0, 70)} → released`;
+});
+
+await step("починка спавна: дыра под точкой возрождения закрывается", () => {
+  mc.state.blockOverrides.set(cellKey(0, 79, 0), "minecraft:air");
+  const checkLine = reply("sw:spawn", admin, "check");
+  must(/расхождений[^\n]*[1-9]/.test(checkLine), `проверка не увидела дыру: ${checkLine}`);
+  const started = reply("sw:spawn", admin, "repair");
+  must(/Починка спавна начата/.test(started), `repair не запущен: ${started}`);
+  const busy = reply("sw:spawn", admin, "build");
+  must(/уже идёт/.test(busy), `вторая сборка не отклонена: ${busy}`);
+  mc.tickTimes(80);
+  must(mc.state.blockOverrides.get(cellKey(0, 79, 0)) === "minecraft:polished_andesite", "дыра не заделана");
+  const status = reply("sw:spawn", admin, "status");
+  must(/простаивает/.test(status), `после починки сборка не остановилась: ${status}`);
+  const preview = reply("sw:spawn", admin, "preview");
+  must(/ячеек всего: \d+/.test(preview) && preview.includes("gold_block"), `preview: ${preview.slice(0, 140)}`);
+  return checkLine.match(/расхождений[^\n]*/)[0];
+});
+
+await step("алтарь спавна открывает меню и отменяет взаимодействие", () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  const event = {
+    player: alice,
+    block: { typeId: "minecraft:gold_block", x: 0, y: 81, z: -4, location: { x: 0, y: 81, z: -4 } },
+    cancel: false,
+    faceLocation: { x: 0.5, y: 0.5, z: 0.5 },
+    isFirstEvent: true,
+  };
+  mc.fire("before", "playerInteractWithBlock", event);
+  must(event.cancel === true, "алтарь не отменил взаимодействие");
+  must(ui.shown.length === 1, `форм открыто: ${ui.shown.length}`);
+  must(ui.shown[0].title.includes("меню"), `открылась не главная форма: ${ui.shown[0].title}`);
+  must(ui.shown[0].buttons.some((label) => label.includes("Авто-шахта")), "в меню нет пункта авто-шахты");
+  ui.shown.length = 0;
+  const wrong = { player: alice, block: { typeId: "minecraft:gold_block", x: 5, y: 64, z: 5, location: { x: 5, y: 64, z: 5 } }, cancel: false };
+  mc.fire("before", "playerInteractWithBlock", wrong);
+  must(wrong.cancel === false, "отменён любой золотой блок на свете, а не только алтарь");
+  return "cancel + главное меню из мира";
+});
+
+check("id блоков и предметов карьера существуют в 1.26.60", () => {
+  const minable = globalThis.__swipecraftProbe.quarry.QUARRY_MINABLE;
+  const blocks = new Set(Object.values(MinecraftBlockTypes));
+  const items = new Set(Object.values(MinecraftItemTypes));
+  const badBlocks = Object.keys(minable).filter((id) => !blocks.has(id));
+  const badDrops = [...new Set(Object.values(minable).map((row) => row.typeId))].filter((id) => !items.has(id));
+  must(badBlocks.length === 0, `в MinecraftBlockTypes нет: ${badBlocks.join(", ")}`);
+  must(badDrops.length === 0, `в MinecraftItemTypes нет: ${badDrops.join(", ")}`);
+  must(Object.keys(minable).length >= 40, `пригодных для копки блоков всего ${Object.keys(minable).length}`);
+  return `${Object.keys(minable).length} пород, 0 несуществующих id`;
+});
+
+check("словари модов переведены и не оставляют сырых ключей", () => {
+  const i18n = globalThis.__swipecraftProbe.i18n;
+  const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build"];
+  const raw = keys.filter((key) => i18n.raw("ru", key) === key || i18n.raw("en", key) === key);
+  must(raw.length === 0, `ключей нет в словаре: ${raw.join(", ")}`);
+  const stats = i18n.dictionaryStats();
+  must(stats.missingEn.length === 0 && stats.missingRu.length === 0, `ru/en разъехались: ${stats.missingEn.join(",")}|${stats.missingRu.join(",")}`);
+  return `${keys.length} ключей модов, ru/en по ${stats.ru}/${stats.en}`;
 });
 
 check("ни один ключ не уехал в текст без перевода", () => {

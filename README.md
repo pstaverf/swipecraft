@@ -13,6 +13,7 @@ PvP-анархия для Minecraft Bedrock **26.60+** (iPhone / Android, без
 | 4 | Планировщик ивентов и 7 механик | готово → `docs/EVENTS.md`, `src/events/` |
 | 5 | Экономика, рынок, кейсы, кланы, квесты, донат, UI | готово → `docs/META.md`, `src/meta/`, `src/ui/` |
 | 6 | Монетизация (только косметика), рефералка, продвижение, чек-лист запуска | готово → `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` |
+| 7 | Моды мира: авто-шахта (карьер) и сборщик спавна с алтарём меню | готово → `docs/WORLD-MODS.md`, `src/world/quarry.ts`, `src/world/spawnbuild.ts` |
 
 ## Установка
 
@@ -27,7 +28,7 @@ bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 ```bash
 npm ci
 npm run check      # tsc --noEmit по @minecraft/server 2.11.0
-npm run stability  # 66 headless-проверок мета-слоя, UI и команд на моке Script API
+npm run stability  # 80 headless-проверок мета-слоя, UI, команд и модов мира на моке Script API
 npm run build      # esbuild -> packs/behavior_pack/scripts/main.js
 npm run pack       # .mcpack + .mcaddon для ручной проверки на клиенте
 bash deploy/deploy-packs.sh   # разложить паки на сервере, включить их в мире, перезапустить
@@ -52,6 +53,8 @@ bash deploy/deploy-packs.sh   # разложить паки на сервере,
 /sw:shop                    косметика: каталог, покупка за ₡, экипировка, подарочные прокрутки
 /sw:ref                     приглашения: мой код и ввод кода друга
 /sw:meta status|info|tx|flush|set <параметр> <число>|reset   мета-слой из консоли
+/sw:quarry ui|status|start|collect|close|go|list|release <id>  авто-шахта (карьер)
+/sw:spawn status|preview|build|repair|check|point              сборщик спавна (нужен тег admin)
 ```
 
 Тег админа выдаётся в консоли сервера: `tag <ник> add admin`.
@@ -78,6 +81,7 @@ bash deploy/deploy-packs.sh   # разложить паки на сервере,
 - `docs/DONATE.md` — донат: тарифы, заявки, ручная выдача, косметика, споры, цель сбора, приоритетный вход.
 - `docs/MONETIZATION.md` — монетизация: что продаётся (только косметика и приоритет входа), процесс выдачи, защита от чарджбэков.
 - `docs/PROMOTION.md` — продвижение: форматы коротких видео, структура сообщества, листинги Bedrock, рефералка в игре.
+- `docs/WORLD-MODS.md` — моды мира: авто-шахта (что роет, чего не трогает, экономика) и сборщик спавна (blueprint, починка, алтарь меню).
 - `docs/LAUNCH-CHECKLIST.md` — чек-лист: неделя до открытия, день открытия, первые 30 дней, мониторинг, бэкапы, читеры, DDoS.
 - `docs/LEGAL.md` — юридический блок: правила Mojang по монетизации (с источником), ToS, возраст, что храним об игроках.
 

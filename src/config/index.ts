@@ -34,6 +34,37 @@ export const CONFIG = {
     tntCheckTicks: 100,
     inventoryScanTicks: 60,
   },
+  quarry: {
+    /** как часто делать проход по карьерам (такт = 50 мс) */
+    everyTicks: 20,
+    /** гарантированный минимум на карьер за проход и общий «бонус» на все карьеры */
+    cellsPerClaim: 1,
+    extraCells: 6,
+    /** сколько пропусков подряд можно проскочить, прежде чем такт закончится */
+    maxSkipPerCell: 40,
+    maxClaims: 40,
+    /** карьер = квадрат (2r+1)² на depth ярусов вниз от точки запуска */
+    radius: 5,
+    depth: 8,
+    /** глубже этого не копаем (и не выше maxY: у спавна и на поверхности карьер бесполезен) */
+    maxY: 62,
+    minY: -56,
+    minDistance: 20,
+    setupCost: 1200,
+    /** буфер в стопках: полный — копать стопорится, пока игрок не заберёт добычу */
+    bufferStacks: 8,
+  },
+  spawn: {
+    /** сторона площади спавна (нечётная), центр — CONFIG.lobby.x/z */
+    size: 25,
+    pillarHeight: 5,
+    pathLength: 8,
+    blocksPerRun: 120,
+    everyTicks: 5,
+    checkEveryTicks: 600,
+    sampleCells: 24,
+    repairAfterMissing: 4,
+  },
   profiles: {
     flushTicks: 20 * 60,
     maxAuditEntries: 250,
@@ -49,5 +80,7 @@ export const STORE_KEYS = {
   acConfig: "sw:ac:cfg",
   audit: "sw:audit",
   events: "sw:events",
+  quarry: "sw:quarry",
+  spawnBuild: "sw:spawn:build",
   profilePrefix: "sw:p:",
 } as const;

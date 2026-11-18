@@ -433,7 +433,7 @@ export const sellHeld = (player: Player, amount: number): MoneyResult => {
   return { ok: true, key: "eco.sell.ok", params: { amount: items, item: typeId.replace("minecraft:", ""), total: price * items, left: Math.max(0, volumeCap - items - soldToday) } };
 };
 
-type NumericTunable = Exclude<keyof EcoTunables, "queueEnabled" | "donorTrailsEnabled">;
+type NumericTunable = Exclude<keyof EcoTunables, "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled">;
 
 const NUMERIC_PARAMS: NumericTunable[] = [
   "transferFeePercent",
@@ -460,6 +460,7 @@ const normalizeTunables = (stored: Partial<EcoTunables> | undefined): EcoTunable
   }
   if (typeof stored.queueEnabled === "boolean") merged.queueEnabled = stored.queueEnabled;
   if (typeof stored.donorTrailsEnabled === "boolean") merged.donorTrailsEnabled = stored.donorTrailsEnabled;
+  if (typeof stored.quarryEnabled === "boolean") merged.quarryEnabled = stored.quarryEnabled;
   return merged;
 };
 
@@ -479,6 +480,12 @@ export const changeEcoParam = (path: string, value: string): { ok: boolean; mess
     saveTunables();
     audit("admin", "eco-config", path, String(tunables.donorTrailsEnabled));
     return { ok: true, message: `donorTrailsEnabled=${tunables.donorTrailsEnabled}` };
+  }
+  if (path === "quarryEnabled") {
+    tunables.quarryEnabled = value === "true" || value === "1";
+    saveTunables();
+    audit("admin", "eco-config", path, String(tunables.quarryEnabled));
+    return { ok: true, message: `quarryEnabled=${tunables.quarryEnabled}` };
   }
   if (!(NUMERIC_PARAMS as string[]).includes(path)) return { ok: false, message: `неизвестный параметр: ${path}` };
   const parsed = Number(value);
@@ -514,6 +521,7 @@ export const ecoSummary = (): string[] => [
   `допуск: игра ${Math.round(tunables.minPlaySecondsForTransfers / 60)} мин, аккаунт ${tunables.minAccountAgeHours} ч`,
   `очередь входа: ${tunables.queueEnabled ? `вкл (кап ${tunables.queueSoftCap}, отпускание ${tunables.queueReleaseAt})` : "выкл"}`,
   `частицы трейлов: ${tunables.donorTrailsEnabled ? "вкл" : "выкл (nameTag и join-сообщения не тронуты)"}`,
+  `авто-шахты: ${tunables.quarryEnabled ? "вкл" : "выкл (карьер не копает, буфер и добытое не тронуты)"}`,
   `сделок всего: ${ledger.txCount}, в журнале: ${txLog.length}`,
 ];
 

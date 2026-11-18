@@ -106,7 +106,7 @@ initAudit → applyWorldRules → initSeason → initBorder → initSpawn → in
 9000, `maxTransferPerTx` 150 000, `maxReceivePerDay` 400 000, `maxPerPairPerDay` 250 000),
 допуски (`minPlaySecondsForTransfers` 1800, `minAccountAgeHours` 24) и пределы систем
 (`clanMaxMembers` 24, `marketTtlDays` 14, `casePricePercent` 100). Отдельно — рубильники
-очереди и cosmetics:
+очереди, cosmetics и модов мира:
 
 | Ключ | По умолчанию | Что гасит |
 |---|---|---|
@@ -114,6 +114,7 @@ initAudit → applyWorldRules → initSeason → initBorder → initSpawn → in
 | `queueSoftCap` | `82` | порог, выше которого новых пускают через зал ожидания |
 | `queueReleaseAt` | `74` | порог отпускания (гистерезис против дёрганья на флуктуациях) |
 | `donorTrailsEnabled` | `true` | только партиклы трейлов: `spawnTrail` выходит `false` до проверки экипировки |
+| `quarryEnabled` | `true` | авто-шахты: `quarryTick` выходит сразу, буферы и записи `sw:quarry` не трогаются |
 
 `donorTrailsEnabled` — «стоп-кран» для FPS на слабых телефонах: выключение не трогает
 `nameTag`, префиксы и join-сообщения, срабатывает на следующем тике `meta-donor`, значение
@@ -122,7 +123,7 @@ initAudit → applyWorldRules → initSeason → initBorder → initSpawn → in
 
 Числовые ключи ставятся `/sw:meta set <имя> <число>` (валидация: число >= 0), булевы —
 `0`/`1`. В форме «Параметры экономики» (`src/ui/admin-meta.ts`) для чисел работает
-textField, а `queueEnabled` и `donorTrailsEnabled` вынесены в два отдельных toggle'а
+textField, а `queueEnabled`, `donorTrailsEnabled` и `quarryEnabled` вынесены в отдельные toggle'а
 («Очередь включена», «Частицы-трейлы включены»): в дропдаун списка параметров они не
 попадают, и обе галочки сохраняются при любом Submit — поэтому их текущее состояние
 подставляется в `defaultValue`. Любая правка уходит в `audit("admin", "eco-config", ...)`

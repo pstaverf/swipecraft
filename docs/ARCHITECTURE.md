@@ -125,10 +125,13 @@ swipecraft/
 │   ├── world/
 │   │   ├── border.ts                сужающаяся граница, расписание по неделям
 │   │   ├── spawn.ts                 лобби, safe zone, точка респавна
+│   │   ├── spawnbuild.ts            сборщик спавна: blueprint, бюджет записей, починка, алтарь меню
+│   │   ├── quarry.ts                авто-шахта: белый список пород, буфер добычи, стоп-кран
 │   │   ├── rtp.ts                   случайная телепортация с кулдауном
 │   │   ├── season.ts                сезонный вайп, ротация сида, анонс
 │   │   ├── limits.ts                лимиты сущностей, хопперов, редстоуна
-│   │   └── rules.ts                 gameRules и правила анархии
+│   │   ├── rules.ts                 gameRules и правила анархии
+│   │   └── messages.ts              ru/en тексты модов мира (addDict)
 │   ├── security/
 │   │   ├── anticheat/config.ts      веса, пороги, окна допуска (hot-reload через /sw:ac)
 │   │   ├── anticheat/index.ts       оркестратор: сэмплинг, скоринг, уведомления админам
@@ -160,7 +163,7 @@ swipecraft/
 │   │   ├── defaults.ts              конструкторы пустых записей (миграции читаются из DP)
 │   │   └── messages.ts              ru/en словари слоя
 │   ├── ui/                          все экраны — формы @minecraft/server-ui, см. docs/META.md
-│   │   ├── menu.ts                  главное меню (кошелёк/рынок/кейсы/клан/прогресс/донат/косметика/…)
+│   │   ├── menu.ts                  главное меню (кошелёк/рынок/кейсы/клан/прогресс/донат/косметика/карьер/…)
 │   │   ├── common.ts                репорты, поиск игрока по имени, пагинация, labelIndex
 │   │   ├── economy.ts               кошелёк, перевод, продажа предмета, топы
 │   │   ├── market.ts                просмотр/покупка/выставление/поиск/модерация лотов
@@ -170,12 +173,13 @@ swipecraft/
 │   │   ├── donations.ts             каталог, заявка, админ-решения, очередь, цель/споры
 │   │   ├── referrals.ts             косметика (каталог/покупка/экипировка) и реферальный экран
 │   │   ├── admin.ts                 админ-панель (вкладки слоёв)
-│   │   ├── admin-meta.ts            мета-вкладка: экономика, кланы, рынок, кейсы, донат, очередь
+│   │   ├── admin-meta.ts            мета-вкладка: экономика, кланы, рынок, кейсы, донат, очередь, моды мира
+│   │   ├── world.ts                 экраны модов: карьер игрока, карьеры/спавн/стоп-краны админа
 │   │   └── messages.ts              ru/en подписи кнопок и полей
 │   ├── commands/
 │   │   └── registry.ts              все custom commands: sw:menu, sw:rtp, sw:admin, sw:ac,
 │   │                                sw:event, sw:eco, sw:market, sw:case, sw:clan, sw:quest,
-│   │                                sw:don, sw:shop, sw:ref, sw:meta
+│   │                                sw:don, sw:shop, sw:ref, sw:meta, sw:quarry, sw:spawn
 │   └── types/
 │       ├── domain.ts                доменные типы (Profile, Clan, EventState, ...)
 │       ├── events.ts                типы шины и детектов
@@ -188,8 +192,8 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  66 проверок: boot/economy/market/cases/clans/progress/
-                                     donations/queue/events/referrals/storage/menu/commands
+        └── run.mjs                  80 проверок: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage/menu/commands/mods
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -252,7 +256,8 @@ swipecraft/
 ### 5.6 Формы: один список на подписи и действия
 
 Экран строится из одного массива записей `{ key, action }` (`MENU_ENTRIES` в `src/ui/menu.ts`,
-`DON_ADMIN_ENTRIES` в `src/ui/donations.ts`): кнопки и разбор ответа идут из него же, поэтому
+`DON_ADMIN_ENTRIES` в `src/ui/donations.ts`, `WORLD_ADMIN_ENTRIES`/`QUARRY_OWN_ENTRIES` в
+`src/ui/world.ts`, `META_ADMIN_ENTRIES` в `src/ui/admin-meta.ts`): кнопки и разбор ответа идут из него же, поэтому
 подпись не может разъехаться с действием на единицу — классический баг «нажал «Правила
 мира», открылся кошелёк», который рождается, когда список кнопок и список `actions`
 поддерживаются раздельно. Динамический счётчик в подписи (`заявки · 3`) — полем `counter`, а
@@ -271,7 +276,9 @@ swipecraft/
 - часть применённых правок не молчит: если значение отвергнуто валидатором (например поле
   детектора, которое ни на что не влияет), форма обязана показать «Не применено (N): …».
 
-Покрытие: стаб-сценарии `menu` и `commands` проверяют и порядок кнопок, и переходы по ним.
+Покрытие: стаб-сценарии `menu`, `commands` и `mods` проверяют и порядок кнопок, и переходы по
+ним; удалённая строка из `MENU_ENTRIES` роняет прогон (`нет пунктов: Авто-шахта`), а не
+оставляет «тихое» меню на одну кнопку короче.
 
 ## 6. Пайплайн сборки и деплоя
 
@@ -295,6 +302,8 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | Сущности в мире | ≤ 1200 | `limits.ts` чистит «мусор» по возрасту |
 | Частицы ивентов | ≤ 40 вызовов/сек на мир | частота и радиус задаются в config |
 | Сейв состояния | ≤ 1 раз в 60 сек | инкрементальные домены, dirty-флаги |
+| Авто-шахта | ≤ `карьеров·1 + 6` правок блоков за такт | `cellsPerClaim`+`extraCells`, копание только онлайн, белый список пород |
+| Сборщик спавна | ≤ 120 правок за проход, ~1.8 с на 755 ячеек | `blocksPerRun`, курсор в DP, проверка — 24 чтения + 10 критических ячеек |
 
 ## 8. Разделение этапов по модулям
 
@@ -305,6 +314,7 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | 3 | `src/world/*`, `src/security/*`, `src/meta/profiles.ts`, `src/meta/balances.ts`, база `src/meta/economy.ts` — готово |
 | 4 | `src/events/*`, `src/commands/registry.ts` (sw:event), `src/ui/admin.ts` (Ивенты) — готово |
 | 5 | `src/meta/*`, `src/ui/*`, `tools/stability/*`, `packs/behavior_pack/entities/war_boss.json`, ресурспак босса — **готово** |
+| 7 | `src/world/quarry.ts`, `src/world/spawnbuild.ts`, `src/ui/world.ts`, `src/world/messages.ts`, `sw:quarry`/`sw:spawn:build`, `quarryEnabled`, `docs/WORLD-MODS.md` — **готово** |
 | 6 | `src/meta/cosmetics.ts`, `src/meta/referrals.ts`, `src/ui/referrals.ts`, цель сбора и споры в `src/meta/donations.ts`, `packs/resource_pack/particles/trail_*.json`, `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` — **готово** |
 
 Отступления этапа 5 от плана — намеренные, каждая причина в doc-файле:

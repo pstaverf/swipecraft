@@ -379,6 +379,7 @@ export const DEFAULT_ECO_TUNABLES: EcoTunables = {
   queueSoftCap: 82,
   queueReleaseAt: 74,
   donorTrailsEnabled: true,
+  quarryEnabled: true,
 };
 
 export const CASE_IDS: CaseId[] = ["basic", "elite"];
