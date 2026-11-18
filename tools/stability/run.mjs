@@ -2218,7 +2218,7 @@ check("взрыв у спавна вырезает защищённые клет
   });
   must(blast.cancelled === false, "взрыв целиком на границе отменён: крёр у спавна перестал быть крём");
   must(mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:polished_andesite", "взрыв снёс плиту спавна");
-  must(mc.state.blockOverrides.get(cellKey(1, 79, 0)) === "minecraft:polished_andesite", "взрыв снёс вторую клетку пола");
+  must(mc.state.blockOverrides.get(cellKey(1, 79, 0)) === "minecraft:deepslate_tiles", "шахматная клетка плиты снесена — фильтр взрывов её не увидел");
   must(mc.state.blockOverrides.get(cellKey(26, 79, 2)) === "minecraft:air", "взрыв не тронул то, что вне спавна");
   // целиком внутри круга отменять уже можно: защищать там нечего, а урон по игрокам гасит entityHurt
   const deep = mc.explode({ x: 0, y: 79, z: 0 }, { blocks: [{ x: 2, y: 79, z: 2 }, { x: 3, y: 79, z: 3 }] });
@@ -2270,7 +2270,8 @@ check("защита не мешает скрипту чинить спавн, а
   mc.state.blockOverrides.set(cellKey(3, 79, 3), "minecraft:air");
   const launch = build.startSpawnBuild("stable", "repair");
   must(launch.ok, `починка не запустилась: ${JSON.stringify(launch)}`);
-  mc.tickTimes(40);
+  mc.tickTimes(60);
+  must(build.spawnStatus().running === false, `починка не завершилась за 12 проходов: ${JSON.stringify(build.spawnStatus())}`);
   must(mc.state.blockOverrides.get(cellKey(3, 79, 3)) === "minecraft:polished_andesite", "защита помешала скрипту починить спавн");
   reply("sw:meta", admin, "set", "spawnProtectEnabled", "false");
   flush();
@@ -2280,9 +2281,14 @@ check("защита не мешает скрипту чинить спавн, а
   reply("sw:meta", admin, "set", "spawnProtectEnabled", "true");
   flush();
   probe.forgetNotice(alice.id);
-  build.startSpawnBuild("stable", "repair");
-  mc.tickTimes(40);
-  must(mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:polished_andesite", "после включения защита помешала вернуть плиту");
+  const relaunch = build.startSpawnBuild("stable", "repair");
+  must(relaunch.ok, `вторая починка не запустилась: ${JSON.stringify(relaunch)}`);
+  mc.tickTimes(60);
+  const st = spawnBuildProbe().spawnStatus();
+  must(
+    mc.state.blockOverrides.get(FLOOR_CELL) === "minecraft:polished_andesite",
+    `после включения защита помешала вернуть плиту: ${mc.state.blockOverrides.get(FLOOR_CELL)} при статусе ${JSON.stringify(st)}`,
+  );
   return "починка работает при обоих положениях стоп-крана";
 });
 
@@ -2312,6 +2318,66 @@ await step("экран «Моды мира» показывает защиту �
 
 check("защита спавна не добавила ошибок в диспетчер событий", () => {
   must(mc.state.dispatchErrors.length === 0, `ошибок в обработчиках: ${mc.state.dispatchErrors.length} (${mc.state.dispatchErrors.slice(-2).join(" | ")})`);
+});
+
+check("blueprint спавна: id блоков существует в 1.26.60", () => {
+  const build = spawnBuildProbe();
+  const blocks = new Set(Object.values(MinecraftBlockTypes));
+  const ids = build.spawnBlueprintTypeIds();
+  const missing = ids.filter((id) => !blocks.has(id));
+  must(missing.length === 0, `в MinecraftBlockTypes нет: ${missing.join(", ")}`);
+  must(ids.length >= 12, `декора нет: blueprint использует всего ${ids.length} id`);
+  return `${build.spawnBlueprintSize()} ячеек, ${ids.length} id, 0 несуществующих`;
+});
+
+check("blueprint спавна: ни одной дублирующейся клетки и второй проход ничего не пишет", () => {
+  const build = spawnBuildProbe();
+  const cells = build.spawnBlueprint();
+  const keys = new Set(cells.map((cell) => cellKey(cell.x, cell.y, cell.z)));
+  must(keys.size === cells.length, `в blueprint'е ${cells.length - keys.size} клеток-дублей: починка будет вечно перестраивать площадь`);
+  const launch = build.startSpawnBuild("stable", "build");
+  must(launch.ok, `сборка не запустилась: ${JSON.stringify(launch)}`);
+  mc.tickTimes(120);
+  const status = build.spawnStatus();
+  must(status.running === false, `сборка не завершилась: ${JSON.stringify(status)}`);
+  // второй проход по уже собранной площади не должен записать ни одной ячейки
+  build.startSpawnBuild("stable", "repair");
+  mc.tickTimes(120);
+  const again = build.spawnStatus();
+  must(again.built === 0, `повторная починка переписала ${again.built} ячеек — blueprint не идемпотентен`);
+  must(again.missing === 0, `целостность не сходится: ${again.missing} расхождений`);
+  return `${cells.length} ячеек, повторный проход: 0 записей`;
+});
+
+check("декор спавна не отрезает вход и не трогает критические клетки", () => {
+  const build = spawnBuildProbe();
+  const cells = build.spawnBlueprint();
+  const at = (x, y, z) => cells.find((cell) => cell.x === x && cell.y === y && cell.z === z)?.typeId;
+  // плита под точкой возрождения обязана оставаться плитой, а не оградой и не клумбой
+  must(at(0, 79, 0) === "minecraft:polished_andesite", `под точкой возрождения лежит ${at(0, 79, 0)}`);
+  must(at(0, 79, -4) !== "minecraft:gold_block", "алтарь уехал из-под точки возрождения");
+  must(at(0, 81, -4) === "minecraft:gold_block", `золотого блока алтаря нет: ${at(0, 81, -4)}`);
+  // лампы по диагоналям подиума: без них проверка «света хватает» была бы вакуумной
+  for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    must(at(dx, 81, -4 + dz) === "minecraft:lantern", `лампа алтаря (${dx}, ${dz}): ${at(dx, 81, -4 + dz)}`);
+  }
+  // четыре проёма в ограде: ровно там, где дорожки
+  for (const [dx, dz] of [[0, 11], [0, -11], [11, 0], [-11, 0]]) {
+    must(at(dx, 80, dz) !== "minecraft:iron_bars", `проём дорожки (${dx}, ${dz}) закован в iron_bars`);
+  }
+  // фонтан: вода на уровне плиты, а не сверху — иначе источник растекётся по площади
+  const water = cells.filter((cell) => cell.typeId === "minecraft:water");
+  must(water.length === 9, `чаша фонтана: ${water.length} клеток воды`);
+  must(water.every((cell) => cell.y === 79), "вода фонтана стоит выше уровня плиты");
+  must(water.some((cell) => cell.x === 0 && cell.z === 6), "фонтан уехал из центра южной части площади");
+  // клумбы и арки: декор есть, и он не в воздухе над спавном
+  const flowers = cells.filter((cell) => /poppy|daisy|allium|cornflower|short_grass/.test(cell.typeId));
+  must(flowers.length >= 16, `цветов ${flowers.length}`);
+  const rails = cells.filter((cell) => cell.typeId === "minecraft:iron_bars");
+  must(rails.length > 40, `ограды всего ${rails.length} клеток`);
+  const lanterns = cells.filter((cell) => /lantern|sea_lantern/.test(cell.typeId));
+  must(lanterns.length >= 12, `фонарей всего ${lanterns.length}`);
+  return `проёма 4, воды 9, цветов ${flowers.length}, ограды ${rails.length}, светильников ${lanterns.length}`;
 });
 
 check("id блоков и предметов карьера существуют в 1.26.60", () => {
