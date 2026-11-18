@@ -28,7 +28,7 @@ bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 ```bash
 npm ci
 npm run check      # tsc --noEmit по @minecraft/server 2.11.0
-npm run stability  # 80 headless-проверок мета-слоя, UI, команд и модов мира на моке Script API
+npm run stability  # 84 headless-проверки мета-слоя, UI, команд и модов мира на моке Script API
 npm run build      # esbuild -> packs/behavior_pack/scripts/main.js
 npm run pack       # .mcpack + .mcaddon для ручной проверки на клиенте
 bash deploy/deploy-packs.sh   # разложить паки на сервере, включить их в мире, перезапустить

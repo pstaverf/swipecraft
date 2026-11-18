@@ -9,7 +9,7 @@
 ### T-7: сборка и код
 
 - [ ] `npm run check && npm run build && npm run stability && npm run pack` - все зелёные.
-      Текущее состояние репозитория: 80 проверок стаба, 0 провалов, `log.error` 0.
+      Текущее состояние репозитория: 84 проверки стаба, 0 провалов, `log.error` 0.
 - [ ] `npm run pack` даёт три файла: `dist/swipecraft.mcaddon`, `dist/swipecraft_bp.mcpack`,
       `dist/swipecraft_rp.mcpack`; их sha256 записаны в релиз-коммент:
       `sha256sum dist/*.mcpack dist/*.mcaddon`.

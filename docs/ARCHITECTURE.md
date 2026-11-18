@@ -192,7 +192,7 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  80 проверок: boot/economy/market/cases/clans/progress/
+        └── run.mjs                  84 проверки: boot/economy/market/cases/clans/progress/
                                      donations/queue/events/referrals/storage/menu/commands/mods
 ```
 

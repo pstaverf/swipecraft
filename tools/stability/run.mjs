@@ -1,5 +1,22 @@
 import * as mc from "./mock-server.mjs";
 import { MinecraftBlockTypes, MinecraftItemTypes } from "@minecraft/vanilla-data";
+import { readFileSync, readdirSync } from "node:fs";
+
+const readSourceFiles = (dir) => {
+  let out = "";
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      out += readSourceFiles(path);
+      continue;
+    }
+    if (!path.endsWith(".ts")) continue;
+    if (path.endsWith("world/messages.ts")) continue;
+    out += readFileSync(path, "utf8");
+  }
+  return out;
+};
 import { answer, shownTitles, ui } from "./mock-ui.mjs";
 
 const DONATIONS_GIFT_ROLLS = 1;
@@ -1433,6 +1450,26 @@ await step("у спавна копать нельзя", () => {
   return text.slice(0, 90);
 });
 
+check("у игрока без карьера статус — «Карьера нет»", () => {
+  const text = reply("sw:quarry", admin, "status");
+  must(/Карьера нет\./.test(text), `статус без карьера: ${text.slice(0, 120)}`);
+  return "отказ назван, а не пустой ответ";
+});
+
+await step("отказы конфигурации: граница, высота, глубина", () => {
+  admin.teleport({ x: 3995, y: 60, z: 0 });
+  const border = reply("sw:quarry", admin, "start");
+  must(/за границу мира \(радиус \d+\)/.test(border), `граница не проверена: ${border}`);
+  admin.teleport({ x: 900, y: 90, z: 900 });
+  const high = reply("sw:quarry", admin, "start");
+  must(/Слишком высоко: карьер ставится не выше y=62/.test(high), `потолок не проверен: ${high}`);
+  admin.teleport({ x: 500, y: -50, z: 500 });
+  const deep = reply("sw:quarry", admin, "start");
+  must(/Слишком глубоко: карьер работает выше y=-56/.test(deep), `дно не проверено: ${deep}`);
+  must((readJson("sw:quarry")?.claims ?? []).length === 0, "отказавшие проверки всё-таки создали запись");
+  return "3 отказа, записей нет";
+});
+
 await step("запуск карьера: списание и запись в dynamic properties", async () => {
   await mintTo("Alice", 3000);
   alice.teleport(QUARRY_SPOT);
@@ -1638,13 +1675,20 @@ await step("объём вычерпан: добыча живёт до collect, �
 });
 
 await step("дистанция, занятый слот и освобождение карьера админом", async () => {
-  alice.teleport(QUARRY_SPOT);
+  // новый угол мира: предыдущая выработка оставила бы «посадку», а нам нужен честный отказ
+  const FRESH_SPOT = { x: 320, y: 60, z: 320 };
+  alice.teleport(FRESH_SPOT);
   await mintTo("Alice", 1500);
   const created = reply("sw:quarry", alice, "start");
   must(/✓ Карьер #/.test(created), `второй карьер не запустился: ${created}`);
   const again = reply("sw:quarry", alice, "start");
   must(/уже есть карьер/.test(again), `двойной слот не отклонён: ${again}`);
-  admin.teleport({ x: QUARRY_SPOT.x + 5, y: 60, z: QUARRY_SPOT.z });
+  const landing = reply("sw:quarry", alice, "go");
+  must(/Приземляться некуда/.test(landing), `посадка в непройченную толщу разрешилась: ${landing}`);
+  must(alice.location.x === FRESH_SPOT.x, `отказ по посадке всё равно телепортировал: ${JSON.stringify(alice.location)}`);
+  const badId = reply("sw:quarry", admin, "release", "net-takogo");
+  must(/Карьера #net-takogo нет/.test(badId), `release чужого id не отказан: ${badId}`);
+  admin.teleport({ x: FRESH_SPOT.x + 5, y: 60, z: FRESH_SPOT.z });
   const near = reply("sw:quarry", admin, "start");
   must(/Слишком близко к чужому карьеру/.test(near), `дистанция 20 блоков не проверена: ${near}`);
   mc.tickTimes(20);
@@ -1657,6 +1701,36 @@ await step("дистанция, занятый слот и освобожден�
   const notice = chatOf(alice).join(" / ");
   must(/Администратор освободил карьер/.test(notice), `владельцу не сказали про release: ${notice.slice(-140)}`);
   return `${list.split("\n")[0].slice(0, 70)} → released`;
+});
+
+await step("админ-экраны модов на пустом мире и точка возрождения из формы", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Карьеры"));
+  await open("sw:admin", admin);
+  const empty = ui.shown.at(-1);
+  must(empty.title.includes("Карьеры"), `открылся не экран карьеров: ${empty.title}`);
+  must(empty.body.includes("Активных карьеров нет"), `пустой список не описан: ${empty.body.slice(0, 160)}`);
+  must(empty.buttons.length === 1, `на пустом списке кнопок ${empty.buttons.length}, ждали 1 (назад)`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  mc.state.defaultSpawn = undefined;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Спавн"));
+  answer(pressLabel("Точка возрождения мира"));
+  await open("sw:admin", admin);
+  const spawnForm = ui.shown.at(-1);
+  for (const part of ["Что застроится", "Проверить целостность", "Починить пропуски", "Пересобрать спавн", "Точка возрождения мира", "Назад"]) {
+    must(spawnForm.buttons.some((label) => label.includes(part)), `на экране спавна нет «${part}»: ${spawnForm.buttons.join(" | ")}`);
+  }
+  must(/Точка возрождения мира: x=0, y=80, z=0/.test(chatOf(admin).join(" / ")), `точка не подтверждена: ${chatOf(admin).join(" / ").slice(-160)}`);
+  must(mc.state.defaultSpawn?.y === 80, `world.setDefaultSpawnLocation не вызван: ${JSON.stringify(mc.state.defaultSpawn)}`);
+  return `${spawnForm.buttons.length} кнопок на экране спавна, точка возрождения проставлена`;
 });
 
 await step("починка спавна: дыра под точкой возрождения закрывается", () => {
@@ -1721,9 +1795,27 @@ check("словари модов переведены и не оставляют
 });
 
 check("ни один ключ не уехал в текст без перевода", () => {
-  const n = globalThis.__swipecraftProbe.i18n.missingKeyCount();
+  const i18n = globalThis.__swipecraftProbe.i18n;
+  const n = i18n.missingKeyCount();
   must(n === 0, `ключей запрошено без перевода: ${n} (см. log.warn[i18n])`);
-  return "0 из 527 ключей не найдено";
+  return `0 из ${i18n.dictionaryStats().ru} ключей не найдено`;
+});
+
+check("в словаре модов мира нет мёртвых ключей", () => {
+  const dict = readFileSync("src/world/messages.ts", "utf8");
+  const blocks = [...dict.matchAll(/const (ru|en): Record<string, string> = \{([\s\S]*?)\n\};/g)].map((match) => ({
+    lang: match[1],
+    keys: [...match[2].matchAll(/^\s+"([\w.]+)":/gm)].map((row) => row[1]),
+  }));
+  must(blocks.length === 2, `в файле найдено блоков словаря: ${blocks.length} (ждали ru и en)`);
+  const [ruBlock, enBlock] = blocks;
+  must(ruBlock.keys.length >= 30, `ключей в ru-блоке модов: ${ruBlock.keys.length}`);
+  const asymmetry = ruBlock.keys.filter((key) => !enBlock.keys.includes(key)).concat(enBlock.keys.filter((key) => !ruBlock.keys.includes(key)));
+  must(asymmetry.length === 0, `ru и en модов разъехались: ${asymmetry.join(", ")}`);
+  const blob = readSourceFiles("src");
+  const dead = ruBlock.keys.filter((key) => !blob.includes(`"${key}"`));
+  must(dead.length === 0, `мёртвые ключи (из кода их никто не запрашивает): ${dead.join(", ")}`);
+  return `${ruBlock.keys.length} ключей, ru/en симметричны, все запрошены из кода`;
 });
 
 check("за весь прогон нет неожиданных log.error / log.warn", () => {
