@@ -1,0 +1,42 @@
+{
+  "format_version": "1.10.0",
+  "particle_effect": {
+    "description": {
+      "identifier": "swipecraft:donor_trail",
+      "basic_render_parameters": {
+        "material": "particles_alpha",
+        "texture": "textures/particles/donor_trail"
+      }
+    },
+    "components": {
+      "minecraft:emitter_rate_steady": {
+        "spawn_rate": 18,
+        "max_particles": 24
+      },
+      "minecraft:emitter_lifetime_once": {
+        "active_time": 0.35
+      },
+      "minecraft:emitter_shape_point": {},
+      "minecraft:particle_lifetime_expression": {
+        "max_lifetime": "0.45 + math.random(0.35)"
+      },
+      "minecraft:particle_initial_speed": 0.25,
+      "minecraft:particle_motion_dynamic": {
+        "linear_acceleration": [0, 0.35, 0],
+        "linear_drag_coefficient": 2.2
+      },
+      "minecraft:particle_appearance_billboard": {
+        "size": ["0.1 + variable.particle_random_1 * 0.08", "0.1 + variable.particle_random_1 * 0.08"],
+        "facing_camera_mode": "lookat_xyz",
+        "uv": {
+          "texture_width": 16,
+          "texture_height": 16,
+          "uv_size": [16, 16]
+        }
+      },
+      "minecraft:particle_appearance_tinting": {
+        "color": ["1.0", "0.82", "0.42", "0.8"]
+      }
+    }
+  }
+}
