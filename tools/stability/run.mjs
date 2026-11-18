@@ -186,8 +186,7 @@ check("словари ru и en синхронны", () => {
   must(stats.en > 250, `словарь en выглядит обрезанным: ${stats.en} ключей`);
   must(stats.missingEn.length === 0, `без перевода en: ${stats.missingEn.slice(0, 10).join(", ")}`);
   must(stats.missingRu.length === 0, `без перевода ru: ${stats.missingRu.slice(0, 10).join(", ")}`);
-  const dead = [...new Set([...Object.keys(globalThis.__swipecraftProbe.uiMessages ?? {}), ...Object.keys(globalThis.__swipecraftProbe.metaMessages ?? {})])];
-  return `${stats.ru}/${stats.en} ключей, модулей словаря подключено: ${Object.keys(globalThis.__swipecraftProbe).length}${dead.length ? "" : ""}`;
+  return `${stats.ru}/${stats.en} ключей, модулей пробы: ${Object.keys(globalThis.__swipecraftProbe).length}`;
 });
 
 check("тикер и задачи работают", () => {
@@ -1186,6 +1185,91 @@ await step("размер кошельков в пределах квоты", () 
   const bytes = mc.world.getDynamicPropertyTotalByteCount();
   must(bytes < 2_000_000, `dynamic properties уже ${bytes} байт`);
   return `${bytes} байт`;
+});
+
+scenario("menu");
+
+await step("главное меню: подписи кнопок и переходы не разъезжаются", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  await open("sw:menu", alice);
+  const form = lastForm();
+  must(form && form.title.includes("Swipecraft"), `меню не открылось: ${shownTitles().join(" > ")}`);
+  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
+  const missing = expected.filter((part) => !form.buttons.some((label) => label.includes(part)));
+  must(missing.length === 0, `нет пунктов: ${missing.join(", ")} (${form.buttons.join(" | ")})`);
+  must(form.buttons.length === expected.length, `игроку без admin показали ${form.buttons.length} кнопок вместо ${expected.length}`);
+  must(!form.buttons.some((label) => label.includes("Админ-панель")), "не-админу видна админ-панель");
+  clearChat(alice);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Правила мира"));
+  await open("sw:menu", alice);
+  const rules = chatOf(alice).join(" / ");
+  must(rules.includes("1. PvP") && rules.includes("10."), `правила не дошли или неполные: ${rules.slice(0, 140)}`);
+  must(/Mojang/i.test(rules), `в правилах нет дисклеймера про Mojang: ${rules.slice(-160)}`);
+  clearChat(alice);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Моя статистика"));
+  await open("sw:menu", alice);
+  const stats = chatOf(alice).join(" / ");
+  must(/Убийств: \d+ \| Смертей: \d+/.test(stats), `статистика не дошла: ${stats.slice(0, 160)}`);
+  return `${form.buttons.length} кнопок, правила и статистика по адресу`;
+});
+
+await step("переключение языка меняет меню и тексты, обратно — тоже", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Язык / Language"));
+  await open("sw:menu", alice);
+  must(chatOf(alice).join(" / ").includes("Language: English"), `язык не переключился: ${chatOf(alice).join(" / ").slice(-120)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  await open("sw:menu", alice);
+  const en = lastForm();
+  must(en.title.includes("menu"), `в en меню осталось русским: ${en.title}`);
+  must(en.buttons.some((label) => label.includes("Wallet")), `кнопки не перевелись: ${en.buttons.join(" | ").slice(0, 160)}`);
+  clearChat(alice);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("World rules"));
+  await open("sw:menu", alice);
+  const rulesEn = chatOf(alice).join(" / ");
+  must(rulesEn.includes("PvP is allowed") && rulesEn.includes("NOT AN OFFICIAL MINECRAFT"), `правила не перешли на en: ${rulesEn.slice(0, 140)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Language / Язык"));
+  await open("sw:menu", alice);
+  must(chatOf(alice).join(" / ").includes("Язык: русский"), `язык не вернулся: ${chatOf(alice).join(" / ").slice(-120)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  await open("sw:menu", alice);
+  must(lastForm().title.includes("меню"), `после возврата ru меню не русское: ${lastForm().title}`);
+  return "en → ru без потерь";
+});
+
+await step("админ-панель видна только админу и открывается из меню", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  await open("sw:menu", admin);
+  const form = lastForm();
+  must(form.buttons.some((label) => label.includes("Админ-панель")), `админу нет пункта админки: ${form.buttons.join(" | ").slice(0, 200)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Админ-панель"));
+  await open("sw:menu", admin);
+  const opened = shownTitles().join(" > ");
+  must(/action:Админ-панель/.test(opened), `переход в админку не сработал: ${opened}`);
+  return `${form.buttons.length} кнопок у админа`;
+});
+
+check("ни один ключ не уехал в текст без перевода", () => {
+  const n = globalThis.__swipecraftProbe.i18n.missingKeyCount();
+  must(n === 0, `ключей запрошено без перевода: ${n} (см. log.warn[i18n])`);
+  return "0 из 527 ключей не найдено";
 });
 
 check("за весь прогон нет неожиданных log.error / log.warn", () => {

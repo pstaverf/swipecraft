@@ -1,4 +1,5 @@
 import { Player } from "@minecraft/server";
+import { log } from "./logger";
 import type { Lang } from "../types/domain";
 
 type Dict = Record<string, string>;
@@ -138,7 +139,26 @@ export const addDict = (lang: Lang, dict: Dict): void => {
   Object.assign(extra[lang], dict);
 };
 
-const lookup = (lang: Lang, key: string): string => dicts[lang][key] ?? extra[lang][key] ?? dicts.ru[key] ?? extra.ru[key] ?? key;
+/**
+ * Ключ, которого нет ни в одном словаре, раньше тихо уезжал в чат и в форму игрока
+ * как «ui.donate.my». Теперь промах виден: warning пишется один раз на ключ (на живом
+ * сервере это не спам), а headless-стаб падает на «нет неожиданных log.warn» — то есть
+ * расхождение ru/en или ключ, записанный только в один словарь, ловится до деплоя.
+ */
+const missingKeys = new Set<string>();
+
+const lookup = (lang: Lang, key: string): string => {
+  const value = dicts[lang][key] ?? extra[lang][key] ?? dicts.ru[key] ?? extra.ru[key];
+  if (value !== undefined) return value;
+  if (!missingKeys.has(key)) {
+    missingKeys.add(key);
+    log.warn("i18n", `нет перевода для ключа «${key}» (запрошен как ${lang})`);
+  }
+  return key;
+};
+
+export const missingKeyCount = (): number => missingKeys.size;
+
 const playerLangs = new Map<string, Lang>();
 
 export const setLang = (playerId: string, lang: Lang): void => {

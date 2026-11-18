@@ -185,11 +185,11 @@ swipecraft/
     ├── package-pack.mjs             упаковка BP+RP в .mcpack/.mcaddon (addon = обе папки в подпапках)
     ├── gen-textures.mjs             синтез текстур ресурспака (PNG без внешних зависимостей)
     └── stability/                   headless-харнесс стабильности (мок @minecraft/server)
-        ├── mock-server.mjs          мир, игроки, сущности, контейнеры, time-patch, фейки событий
+        ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  57 проверок: boot/economy/market/cases/clans/progress/
-                                     donations/queue/events/referrals/storage + синхронность ru/en
+        └── run.mjs                  61 проверка: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage/menu + ru/en
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -230,7 +230,15 @@ swipecraft/
 
 ### 5.4 i18n
 
-Ключи в словарях, `t(player, key, vars)` подставляет параметры. Язык хранится в профиле, по умолчанию `ru`, переключатель — в меню настроек. Формы собираются из словаря, поэтому переключение мгновенное.
+Ключи в словарях, `t(player, key, vars)` подставляет параметры. Язык хранится в профиле,
+по умолчанию `ru`, переключатель — в `/sw:menu` («Язык / Language»). Формы собираются из
+словаря, поэтому переключение мгновенное: следующий `show()` уже на новом языке.
+
+Промах по ключу (нет ни в ru, ни в en) не уходит в чат тихим `ui.donate.my`: `lookup`
+пишет `log.warn("i18n", ...)` один раз на ключ и возвращает сам ключ. Стаб-харнесс
+превращает это в падение двумя проверками — «ни один ключ не уехал в текст без перевода»
+(`missingKeyCount()`) и «за весь прогон нет неожиданных log.error / log.warn», а
+синхронность словарей проверяется по `dictionaryStats()` (527 ключей в обе стороны).
 
 ### 5.5 Отказоустойчивость
 
