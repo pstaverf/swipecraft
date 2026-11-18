@@ -127,6 +127,7 @@ swipecraft/
 │   │   ├── spawn.ts                 лобби, safe zone, точка респавна
 │   │   ├── spawnbuild.ts            сборщик спавна: blueprint, бюджет записей, починка, алтарь меню
 │   │   ├── quarry.ts                авто-шахта: белый список пород, буфер добычи, стоп-кран
+│   │   ├── totems.ts                зачарованные тотемы: обряд, реестр зарядов, отмена смертельного урона
 │   │   ├── rtp.ts                   случайная телепортация с кулдауном
 │   │   ├── season.ts                сезонный вайп, ротация сида, анонс
 │   │   ├── limits.ts                лимиты сущностей, хопперов, редстоуна
@@ -174,7 +175,7 @@ swipecraft/
 │   │   ├── referrals.ts             косметика (каталог/покупка/экипировка) и реферальный экран
 │   │   ├── admin.ts                 админ-панель (вкладки слоёв)
 │   │   ├── admin-meta.ts            мета-вкладка: экономика, кланы, рынок, кейсы, донат, очередь, моды мира
-│   │   ├── world.ts                 экраны модов: карьер игрока, карьеры/спавн/стоп-краны админа
+│   │   ├── world.ts                 экраны модов: карьер и тотемы игрока, карьеры/спавн/тотемы/стоп-краны админа
 │   │   └── messages.ts              ru/en подписи кнопок и полей
 │   ├── commands/
 │   │   └── registry.ts              все custom commands: sw:menu, sw:rtp, sw:admin, sw:ac,
@@ -192,8 +193,8 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  84 проверки: boot/economy/market/cases/clans/progress/
-                                     donations/queue/events/referrals/storage/menu/commands/mods
+        └── run.mjs                  98 проверок: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage/menu/commands/mods/totems
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -304,6 +305,7 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | Сейв состояния | ≤ 1 раз в 60 сек | инкрементальные домены, dirty-флаги |
 | Авто-шахта | ≤ `карьеров·1 + 6` правок блоков за такт | `cellsPerClaim`+`extraCells`, копание только онлайн, белый список пород |
 | Сборщик спавна | ≤ 120 правок за проход, ~1.8 с на 755 ячеек | `blocksPerRun`, курсор в DP, проверка — 24 чтения + 10 критических ячеек |
+| Зачарованные тотемы | 0 правок блоков, 1 отменённый урон за `saveCooldownMs` на игрока | `savesPerDay`/`forgesPerDay`, реестр ≤ `maxActive` записей, прунинг разряженных за `spentTtlDays` |
 
 ## 8. Разделение этапов по модулям
 
@@ -315,6 +317,7 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | 4 | `src/events/*`, `src/commands/registry.ts` (sw:event), `src/ui/admin.ts` (Ивенты) — готово |
 | 5 | `src/meta/*`, `src/ui/*`, `tools/stability/*`, `packs/behavior_pack/entities/war_boss.json`, ресурспак босса — **готово** |
 | 7 | `src/world/quarry.ts`, `src/world/spawnbuild.ts`, `src/ui/world.ts`, `src/world/messages.ts`, `sw:quarry`/`sw:spawn:build`, `quarryEnabled`, `docs/WORLD-MODS.md` — **готово** |
+| 8 | `src/world/totems.ts`, экраны тотемов в `src/ui/world.ts`, `sw:totem`, `totemsEnabled`, 52 ключа `totem.*`, `docs/WORLD-MODS.md` §3 — **готово** |
 | 6 | `src/meta/cosmetics.ts`, `src/meta/referrals.ts`, `src/ui/referrals.ts`, цель сбора и споры в `src/meta/donations.ts`, `packs/resource_pack/particles/trail_*.json`, `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` — **готово** |
 
 Отступления этапа 5 от плана — намеренные, каждая причина в doc-файле:

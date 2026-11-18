@@ -54,6 +54,53 @@ export const CONFIG = {
     /** буфер в стопках: полный — копать стопорится, пока игрок не заберёт добычу */
     bufferStacks: 8,
   },
+  totems: {
+    /** предмет-носитель: ванический тотем, который обряд превращает в зачарованный */
+    carrier: "minecraft:totem_of_undying",
+    /** сколько секунд после спасения удары по игроку гасятся (как ванильный тотем, иначе «спасли и добили») */
+    immunityMs: 2500,
+    /** пауза между спасениями у одного игрока */
+    saveCooldownMs: 90_000,
+    /** потолок спасений на игрока в сутки */
+    savesPerDay: 3,
+    /** потолок обрядов на игрока в сутки */
+    forgesPerDay: 2,
+    /** размер реестра: разряженные записи живут spentTtlDays и потом вычищаются */
+    maxActive: 400,
+    spentTtlDays: 7,
+    pruneEveryTicks: 600,
+    tiers: {
+      whisper: {
+        coinCost: 2500,
+        emeralds: 6,
+        charges: 1,
+        effects: [
+          { id: "regeneration", seconds: 8, amplifier: 0 },
+          { id: "resistance", seconds: 3, amplifier: 0 },
+        ],
+      },
+      oath: {
+        coinCost: 7000,
+        emeralds: 18,
+        charges: 1,
+        effects: [
+          { id: "regeneration", seconds: 12, amplifier: 1 },
+          { id: "resistance", seconds: 6, amplifier: 1 },
+          { id: "speed", seconds: 6, amplifier: 0 },
+        ],
+      },
+      ash: {
+        coinCost: 20000,
+        emeralds: 48,
+        charges: 2,
+        effects: [
+          { id: "regeneration", seconds: 20, amplifier: 1 },
+          { id: "resistance", seconds: 10, amplifier: 1 },
+          { id: "strength", seconds: 10, amplifier: 0 },
+        ],
+      },
+    },
+  },
   spawn: {
     /** сторона площади спавна (нечётная), центр — CONFIG.lobby.x/z */
     size: 25,
@@ -81,6 +128,7 @@ export const STORE_KEYS = {
   audit: "sw:audit",
   events: "sw:events",
   quarry: "sw:quarry",
+  totems: "sw:totems",
   spawnBuild: "sw:spawn:build",
   profilePrefix: "sw:p:",
 } as const;

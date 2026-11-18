@@ -7,6 +7,8 @@ import * as metaMessagesProbe from "../meta/messages";
 import * as cosmeticsProbe from "../meta/cosmetics";
 import * as quarryProbe from "../world/quarry";
 import * as spawnBuildProbe from "../world/spawnbuild";
+import * as totemsProbe from "../world/totems";
+import * as anticheatProbe from "../security/anticheat";
 
 declare const globalThis: { __swipecraftProbe?: Record<string, unknown> };
 
@@ -17,6 +19,8 @@ globalThis.__swipecraftProbe = {
   cosmetics: cosmeticsProbe,
   quarry: quarryProbe,
   spawnBuild: spawnBuildProbe,
+  totems: totemsProbe,
+  anticheat: anticheatProbe,
 };
 
 system.beforeEvents.startup.subscribe((event) => {

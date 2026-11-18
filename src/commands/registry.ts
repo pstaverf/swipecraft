@@ -27,7 +27,9 @@ import {
 } from "../world/quarry";
 import { checkSpawnIntegrity, spawnBlueprint, spawnPreviewLines, spawnStatus, spawnStatusLines, startSpawnBuild, setSpawnPoint } from "../world/spawnbuild";
 import { openAdminPanel } from "../ui/admin";
-import { openQuarry } from "../ui/world";
+import { openQuarry, openTotems } from "../ui/world";
+import { TOTEM_TIER_IDS, forgeTotem, revokeTotem, totemHowLines, totemLines, totemRows, totemSummary } from "../world/totems";
+import type { TotemTierId } from "../types/domain";
 import { isAdmin, openMenu } from "../ui/menu";
 import { openWallet } from "../ui/economy";
 import { openMarket } from "../ui/market";
@@ -136,6 +138,33 @@ export const registerCommands = (event: StartupEvent): void => {
     const check = canPlaceQuarry(player);
     const summary = quarrySummary();
     return [...lines, check.ok ? t(player, "quarry.ready", check.params) : `✗ ${t(player, check.key, check.params)}`, `карьеров на сервере: ${summary.claims}/${CONFIG.quarry.maxClaims}, ${summary.enabled ? "копают" : "стоп-кран"}`]
+      .join("\n")
+      .slice(0, 900);
+  });
+
+  register(event, "sw:totem", "Зачарованные тотемы: ui | status | forge <tier> | info | revoke <серия>", CommandPermissionLevel.Any, (player, args) => {
+    const sub = args[0] ?? "status";
+    if (sub === "ui") {
+      // как и в sw:quarry: форму открываем out-of-band, ответ команды остаётся строкой
+      void openTotems(player);
+      return t(player, "totem.title");
+    }
+    const say = (value: { ok: boolean; key: string; params?: Record<string, string | number> }): string =>
+      `${value.ok ? "✓" : "✗"} ${t(player, value.key, value.params)}`;
+    if (sub === "forge") {
+      const tier = String(args[1] ?? "whisper") as TotemTierId;
+      if (!TOTEM_TIER_IDS.includes(tier)) return `✗ ${t(player, "totem.err.tier")} (${TOTEM_TIER_IDS.join(" | ")})`;
+      return say(forgeTotem(player, tier));
+    }
+    if (sub === "info") return totemHowLines(player).join("\n").slice(0, 900);
+    if (sub === "revoke") {
+      if (!isAdmin(player)) return t(player, "admin.noPermission");
+      const serial = args[1];
+      if (!serial) return `${t(player, "totem.err.serial", { serial: "—" })}\n${totemRows().map((row) => row.serial).join(", ")}`;
+      return say(revokeTotem(player.name, serial));
+    }
+    const summary = totemSummary();
+    return [...totemLines(player), `тотемов в реестре: ${summary.rows} (живых ${summary.live}), ${summary.enabled ? "включены" : "стоп-кран"}`]
       .join("\n")
       .slice(0, 900);
   });

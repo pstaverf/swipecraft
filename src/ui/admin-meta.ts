@@ -55,6 +55,7 @@ const openEcoParams = async (player: Player): Promise<void> => {
       .toggle(t(player, "ui.admin.eco.queue"), { defaultValue: tunables.queueEnabled })
       .toggle(t(player, "ui.admin.eco.trails"), { defaultValue: tunables.donorTrailsEnabled })
       .toggle(t(player, "admin.world.quarry.toggle"), { defaultValue: tunables.quarryEnabled })
+      .toggle(t(player, "admin.world.totem.toggle"), { defaultValue: tunables.totemsEnabled })
       .submitButton(t(player, "ui.confirm"));
 
     const response = await form.show(player);
@@ -74,6 +75,7 @@ const openEcoParams = async (player: Player): Promise<void> => {
     // четвёртый тумблер мог не прийти в ответе (форма открыта до обновления конфига) —
     // «undefined» читаем как «не трогать», а не как «выключить авто-шахты молча»
     if (values[4] !== undefined) report(player, text(metaChangeParam("quarryEnabled", values[4] ? "true" : "false").message));
+    if (values[5] !== undefined) report(player, text(metaChangeParam("totemsEnabled", values[5] ? "true" : "false").message));
     player.sendMessage(ecoSummary().slice(0, 4).join("\n"));
   });
 };

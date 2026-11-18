@@ -433,7 +433,7 @@ export const sellHeld = (player: Player, amount: number): MoneyResult => {
   return { ok: true, key: "eco.sell.ok", params: { amount: items, item: typeId.replace("minecraft:", ""), total: price * items, left: Math.max(0, volumeCap - items - soldToday) } };
 };
 
-type NumericTunable = Exclude<keyof EcoTunables, "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled">;
+type NumericTunable = Exclude<keyof EcoTunables, "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" | "totemsEnabled">;
 
 const NUMERIC_PARAMS: NumericTunable[] = [
   "transferFeePercent",
@@ -461,6 +461,7 @@ const normalizeTunables = (stored: Partial<EcoTunables> | undefined): EcoTunable
   if (typeof stored.queueEnabled === "boolean") merged.queueEnabled = stored.queueEnabled;
   if (typeof stored.donorTrailsEnabled === "boolean") merged.donorTrailsEnabled = stored.donorTrailsEnabled;
   if (typeof stored.quarryEnabled === "boolean") merged.quarryEnabled = stored.quarryEnabled;
+  if (typeof stored.totemsEnabled === "boolean") merged.totemsEnabled = stored.totemsEnabled;
   return merged;
 };
 
@@ -486,6 +487,12 @@ export const changeEcoParam = (path: string, value: string): { ok: boolean; mess
     saveTunables();
     audit("admin", "eco-config", path, String(tunables.quarryEnabled));
     return { ok: true, message: `quarryEnabled=${tunables.quarryEnabled}` };
+  }
+  if (path === "totemsEnabled") {
+    tunables.totemsEnabled = value === "true" || value === "1";
+    saveTunables();
+    audit("admin", "eco-config", path, String(tunables.totemsEnabled));
+    return { ok: true, message: `totemsEnabled=${tunables.totemsEnabled}` };
   }
   if (!(NUMERIC_PARAMS as string[]).includes(path)) return { ok: false, message: `неизвестный параметр: ${path}` };
   const parsed = Number(value);
@@ -522,6 +529,7 @@ export const ecoSummary = (): string[] => [
   `очередь входа: ${tunables.queueEnabled ? `вкл (кап ${tunables.queueSoftCap}, отпускание ${tunables.queueReleaseAt})` : "выкл"}`,
   `частицы трейлов: ${tunables.donorTrailsEnabled ? "вкл" : "выкл (nameTag и join-сообщения не тронуты)"}`,
   `авто-шахты: ${tunables.quarryEnabled ? "вкл" : "выкл (карьер не копает, буфер и добытое не тронуты)"}`,
+  `тотемы: ${tunables.totemsEnabled ? "вкл" : "выкл (обряд недоступен, спасение не срабатывает, реестр цел)"}`,
   `сделок всего: ${ledger.txCount}, в журнале: ${txLog.length}`,
 ];
 

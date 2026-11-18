@@ -23,6 +23,19 @@ import {
   teleportToQuarry,
 } from "../world/quarry";
 import { checkSpawnIntegrity, spawnBlueprint, spawnPreviewLines, spawnStatus, startSpawnBuild, spawnStatusLines, setSpawnPoint } from "../world/spawnbuild";
+import {
+  canForgeTotem,
+  forgeTotem,
+  revokeTotem,
+  totemAdminLines,
+  totemHowLines,
+  totemMenuLines,
+  totemRows,
+  totemSummary,
+  totemTierCost,
+  totemTiers,
+} from "../world/totems";
+import type { TotemTierId } from "../types/domain";
 import { openMenu } from "./menu";
 import { busyNote, report } from "./common";
 import "../world/messages";
@@ -173,14 +186,18 @@ const openSpawnAdmin = async (player: Player): Promise<void> => {
 
 const QUARRY_ADMIN_BACK: Entry = BACK_TO_WORLD;
 
-const MOD_TOGGLES: readonly { readonly key: string; readonly path: "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" }[] = [
+const MOD_TOGGLES: readonly {
+  readonly key: string;
+  readonly path: "queueEnabled" | "donorTrailsEnabled" | "quarryEnabled" | "totemsEnabled";
+}[] = [
   { key: "ui.admin.eco.queue", path: "queueEnabled" },
   { key: "ui.admin.eco.trails", path: "donorTrailsEnabled" },
   { key: "admin.world.quarry.toggle", path: "quarryEnabled" },
+  { key: "admin.world.totem.toggle", path: "totemsEnabled" },
 ];
 
 /**
- * Стоп-краны: три булева тумблера мира в одном списке (§5.6). Ничего не меняется молча —
+ * Стоп-краны: четыре булева тумблера мира в одном списке (§5.6). Ничего не меняется молча —
  * применённые флаги печатаются, а «изменений нет» тоже ответ, а не тишина.
  */
 const openModToggles = async (player: Player): Promise<void> => {
@@ -199,6 +216,9 @@ const openModToggles = async (player: Player): Promise<void> => {
     const refused: string[] = [];
     MOD_TOGGLES.forEach((toggle, index) => {
       const raw = values[index];
+      // тумблер мог не прийти в ответе (форму открыли до обновления конфига) — читаем как
+      // «не трогать», а не как «выключить молча»: тот же класс бага, что со «слипанием» toggle
+      if (raw === undefined) return;
       const next = raw === true || raw === "true";
       if (Boolean(tunables[toggle.path]) === next) return;
       const result = metaChangeParam(toggle.path, next ? "true" : "false");
@@ -241,9 +261,103 @@ const openQuarryAdmin = async (player: Player): Promise<void> => {
   });
 };
 
+const TOTEM_ENTRIES: readonly Entry[] = [
+  { key: "totem.forge", action: "forge" },
+  { key: "totem.how", action: "how" },
+];
+
+const confirmForge = async (player: Player, tier: TotemTierId): Promise<void> => {
+  const can = canForgeTotem(player, tier);
+  if (!can.ok) {
+    report(player, can);
+    return;
+  }
+  const form = new ActionFormData().title(t(player, "totem.title")).body(t(player, can.key, can.params).slice(0, 1800));
+  for (const entry of CONFIRM_ENTRIES) form.button(t(player, entry.key));
+  const response = await form.show(player);
+  if (response.canceled || response.selection === undefined) {
+    busyNote(player, response);
+    return;
+  }
+  if (CONFIRM_ENTRIES[response.selection]?.action === "yes") report(player, forgeTotem(player, tier));
+};
+
+/** Выбор обряда: подписи кнопок собираются из одного списка, как и всё остальное (§5.6). */
+const openTotemPick = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:totems:pick", async () => {
+    const entries: Entry[] = totemTiers().map((tier) => ({
+      key: "totem.tier.pick",
+      action: `forge:${tier.id}`,
+      params: { name: t(player, `totem.tier.${tier.id}`), charges: tier.charges, cost: totemTierCost(tier.id).total, symbol: CURRENCY.symbol },
+    }));
+    entries.push({ key: "common.back", action: "back" });
+    const form = new ActionFormData().title(t(player, "totem.forge.pick")).body(totemMenuLines(player).join("\n").slice(0, 1800));
+    for (const entry of entries) form.button(t(player, entry.key, entry.params));
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) {
+      busyNote(player, response);
+      return;
+    }
+    const action = entries[response.selection]?.action ?? "";
+    if (action.startsWith("forge:")) {
+      await confirmForge(player, action.slice("forge:".length) as TotemTierId);
+      return;
+    }
+    await openTotems(player);
+  });
+};
+
+export const openTotems = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:totems", async () => {
+    const entries = [...TOTEM_ENTRIES, BACK_ENTRY];
+    const form = new ActionFormData().title(t(player, "totem.title")).body(totemMenuLines(player).join("\n").slice(0, 1800));
+    for (const entry of entries) form.button(t(player, entry.key));
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) {
+      busyNote(player, response);
+      return;
+    }
+    switch (entries[response.selection]?.action) {
+      case "forge":
+        await openTotemPick(player);
+        return;
+      case "how":
+        player.sendMessage(totemHowLines(player).join("\n").slice(0, 1800));
+        return;
+      default:
+        await openMenu(player);
+    }
+  });
+};
+
+const openTotemAdmin = async (player: Player): Promise<void> => {
+  await safeRunAsync("ui:admin:totems", async () => {
+    const rows = totemRows().filter((row) => row.charges > 0);
+    const all = totemRows();
+    const entries: Entry[] = rows.map((row) => ({ key: "totem.revoke", action: `revoke:${row.serial}`, params: { serial: row.serial } }));
+    entries.push(BACK_TO_WORLD);
+    const form = new ActionFormData()
+      .title(t(player, "ui.admin.world.totems"))
+      .body((all.length === 0 ? t(player, "totem.admin.none") : totemAdminLines(player).join("\n")).slice(0, 1800));
+    for (const entry of entries) form.button(t(player, entry.key, entry.params));
+    const response = await form.show(player);
+    if (response.canceled || response.selection === undefined) {
+      busyNote(player, response);
+      return;
+    }
+    const action = entries[response.selection]?.action;
+    if (action?.startsWith("revoke:")) {
+      report(player, revokeTotem(player.name, action.slice("revoke:".length)));
+      return;
+    }
+    await openWorldMods(player);
+  });
+};
+
 const WORLD_ADMIN_ENTRIES: readonly Entry[] = [
   { key: "ui.admin.world.quarry", action: "quarry" },
   { key: "ui.admin.world.spawn", action: "spawn" },
+  { key: "ui.admin.world.totems", action: "totems" },
   { key: "ui.admin.world.mods", action: "toggles" },
   { key: "ui.menu", action: "back" },
 ];
@@ -268,6 +382,16 @@ export const openWorldMods = async (player: Player): Promise<void> => {
         missing: status.missing,
       }),
       t(player, "admin.world.quarry.shape", { cells: quarryCells(), cost: CONFIG.quarry.setupCost, symbol: CURRENCY.symbol, max: CONFIG.quarry.maxClaims }),
+      (() => {
+        const totems = totemSummary();
+        return t(player, "admin.world.totem.line", {
+          rows: totems.rows,
+          live: totems.live,
+          forges: totems.forgesToday,
+          saves: totems.savesToday,
+          state: totems.enabled ? t(player, "admin.world.on") : t(player, "admin.world.off"),
+        });
+      })(),
     ].join("\n");
     const form = new ActionFormData().title(t(player, "ui.admin.world")).body(body.slice(0, 1800));
     for (const entry of WORLD_ADMIN_ENTRIES) form.button(t(player, entry.key));
@@ -282,6 +406,9 @@ export const openWorldMods = async (player: Player): Promise<void> => {
         return;
       case "spawn":
         await openSpawnAdmin(player);
+        return;
+      case "totems":
+        await openTotemAdmin(player);
         return;
       case "toggles":
         await openModToggles(player);

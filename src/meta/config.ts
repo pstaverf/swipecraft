@@ -380,6 +380,7 @@ export const DEFAULT_ECO_TUNABLES: EcoTunables = {
   queueReleaseAt: 74,
   donorTrailsEnabled: true,
   quarryEnabled: true,
+  totemsEnabled: true,
 };
 
 export const CASE_IDS: CaseId[] = ["basic", "elite"];

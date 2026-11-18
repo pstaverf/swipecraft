@@ -5,7 +5,7 @@ import { getLang, setLang, t } from "../kernel/i18n";
 import { formatDuration } from "../kernel/util";
 import { getProfile, saveProfile } from "../meta/profiles";
 import { randomTeleport } from "../world/rtp";
-import { openQuarry } from "./world";
+import { openQuarry, openTotems } from "./world";
 import { openAdminPanel } from "./admin";
 import { openWallet } from "./economy";
 import { openMarket } from "./market";
@@ -18,7 +18,7 @@ import "./messages";
 
 export const isAdmin = (player: Player): boolean => player.hasTag("admin");
 
-type MenuAction = "quarry" | "wallet" | "market" | "cases" | "clan" | "progress" | "donate" | "cosmetics" | "ref" | "rtp" | "rules" | "stats" | "lang" | "admin" | "close";
+type MenuAction = "quarry" | "totems" | "wallet" | "market" | "cases" | "clan" | "progress" | "donate" | "cosmetics" | "ref" | "rtp" | "rules" | "stats" | "lang" | "admin" | "close";
 type MenuEntry = { readonly key: string; readonly action: MenuAction };
 
 /**
@@ -36,6 +36,7 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   { key: "ui.cosmetics", action: "cosmetics" },
   { key: "ui.ref", action: "ref" },
   { key: "ui.quarry", action: "quarry" },
+  { key: "ui.totems", action: "totems" },
   { key: "menu.rtp", action: "rtp" },
   { key: "menu.rules", action: "rules" },
   { key: "menu.stats", action: "stats" },
@@ -56,6 +57,9 @@ export const openMenu = async (player: Player): Promise<void> => {
     switch (entries[response.selection]?.action) {
       case "quarry":
         await openQuarry(player);
+        return;
+      case "totems":
+        await openTotems(player);
         return;
       case "wallet":
         await openWallet(player);

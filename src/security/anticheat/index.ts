@@ -78,6 +78,12 @@ export const resetState = (playerId: string): void => {
 
 export const playerScore = (playerId: string): number => stateOf(playerId).score;
 
+/**
+ * Сколько миллисекунд остаётся до конца grace-окна (0 — окна нет). Только чтение: диагностика
+ * и headless-стаб не должны создавать состояние игрока.
+ */
+export const graceLeftMs = (playerId: string): number => Math.max(0, (states.get(playerId)?.graceUntil ?? 0) - Date.now());
+
 const inGrace = (state: AcState): boolean => Date.now() < state.graceUntil;
 
 const prune = (times: number[], windowMs: number): void => {

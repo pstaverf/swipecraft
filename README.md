@@ -14,6 +14,7 @@ PvP-анархия для Minecraft Bedrock **26.60+** (iPhone / Android, без
 | 5 | Экономика, рынок, кейсы, кланы, квесты, донат, UI | готово → `docs/META.md`, `src/meta/`, `src/ui/` |
 | 6 | Монетизация (только косметика), рефералка, продвижение, чек-лист запуска | готово → `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` |
 | 7 | Моды мира: авто-шахта (карьер) и сборщик спавна с алтарём меню | готово → `docs/WORLD-MODS.md`, `src/world/quarry.ts`, `src/world/spawnbuild.ts` |
+| 8 | Моды мира: зачарованные тотемы (обряд за ₡+изумруды, спасение ценой заряда) | готово → `docs/WORLD-MODS.md` §3, `src/world/totems.ts` |
 
 ## Установка
 
@@ -28,7 +29,7 @@ bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 ```bash
 npm ci
 npm run check      # tsc --noEmit по @minecraft/server 2.11.0
-npm run stability  # 84 headless-проверки мета-слоя, UI, команд и модов мира на моке Script API
+npm run stability  # 98 headless-проверок мета-слоя, UI, команд и модов мира на моке Script API
 npm run build      # esbuild -> packs/behavior_pack/scripts/main.js
 npm run pack       # .mcpack + .mcaddon для ручной проверки на клиенте
 bash deploy/deploy-packs.sh   # разложить паки на сервере, включить их в мире, перезапустить
@@ -54,6 +55,7 @@ bash deploy/deploy-packs.sh   # разложить паки на сервере,
 /sw:ref                     приглашения: мой код и ввод кода друга
 /sw:meta status|info|tx|flush|set <параметр> <число>|reset   мета-слой из консоли
 /sw:quarry ui|status|start|collect|close|go|list|release <id>  авто-шахта (карьер)
+/sw:totem ui|status|forge <ступень>|info|revoke <серия>    зачарованные тотемы
 /sw:spawn status|preview|build|repair|check|point              сборщик спавна (нужен тег admin)
 ```
 

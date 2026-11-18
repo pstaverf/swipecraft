@@ -115,6 +115,7 @@ initAudit → applyWorldRules → initSeason → initBorder → initSpawn → in
 | `queueReleaseAt` | `74` | порог отпускания (гистерезис против дёрганья на флуктуациях) |
 | `donorTrailsEnabled` | `true` | только партиклы трейлов: `spawnTrail` выходит `false` до проверки экипировки |
 | `quarryEnabled` | `true` | авто-шахты: `quarryTick` выходит сразу, буферы и записи `sw:quarry` не трогаются |
+| `totemsEnabled` | `true` | тотемы: обряд отказывает, `beforeEvents.entityHurt` не отменяется, реестр `sw:totems` и предметы не трогаются |
 
 `donorTrailsEnabled` — «стоп-кран» для FPS на слабых телефонах: выключение не трогает
 `nameTag`, префиксы и join-сообщения, срабатывает на следующем тике `meta-donor`, значение
@@ -123,7 +124,7 @@ initAudit → applyWorldRules → initSeason → initBorder → initSpawn → in
 
 Числовые ключи ставятся `/sw:meta set <имя> <число>` (валидация: число >= 0), булевы —
 `0`/`1`. В форме «Параметры экономики» (`src/ui/admin-meta.ts`) для чисел работает
-textField, а `queueEnabled`, `donorTrailsEnabled` и `quarryEnabled` вынесены в отдельные toggle'а
+textField, а `queueEnabled`, `donorTrailsEnabled`, `quarryEnabled` и `totemsEnabled` вынесены в отдельные toggle'а
 («Очередь включена», «Частицы-трейлы включены»): в дропдаун списка параметров они не
 попадают, и обе галочки сохраняются при любом Submit — поэтому их текущее состояние
 подставляется в `defaultValue`. Любая правка уходит в `audit("admin", "eco-config", ...)`

@@ -9,6 +9,9 @@ import { initEvents } from "../events/manager";
 import { initMeta } from "../meta/index";
 import { initBorder } from "../world/border";
 import { flushQuarries, initQuarry } from "../world/quarry";
+import { flushTotems, initTotems, savePlayer } from "../world/totems";
+import { safeRun } from "../kernel/guard";
+import { Player } from "@minecraft/server";
 import { initSpawnBuild, isSpawnMenuBlock } from "../world/spawnbuild";
 import { openMenu } from "../ui/menu";
 import { initLimits } from "../world/limits";
@@ -31,6 +34,7 @@ const boot = (): void => {
   initLimits();
   initSpawnBuild(getSeason().index);
   initQuarry(getSeason().index);
+  initTotems(getSeason().index);
   initAntiDupe();
   initAnticheat();
   initMeta();
@@ -42,6 +46,12 @@ const boot = (): void => {
     event.cancel = true;
     const player = event.player;
     void openMenu(player);
+  });
+
+  // спасение тотемом = отмена смертельного урона: после entityDie возвращать игрока уже нечем
+  world.beforeEvents.entityHurt.subscribe((event) => {
+    if (!(event.hurtEntity instanceof Player)) return;
+    safeRun("totems", () => savePlayer(event.hurtEntity as Player, event));
   });
 
   registerProfileTasks(registerTask);
@@ -69,6 +79,7 @@ world.afterEvents.playerLeave.subscribe((event) => {
   flushAudit();
   // карьер всё равно встанет на паузе (копаем только онлайн), но добычу терять нельзя
   flushQuarries();
+  flushTotems();
 });
 
 world.afterEvents.playerJoin.subscribe(() => {

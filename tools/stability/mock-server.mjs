@@ -306,6 +306,15 @@ const makeEntity = (typeId, location, dimension, healthMax = 20, prototype = Ent
     getEffect: (id) => entity._effects.get(id),
     removeEffect: (id) => entity._effects.delete(id),
     applyDamage: (amount, options) => {
+      // beforeEvents.entityHurt: обработчик может отменить урон (тотем спасения именно так и делает)
+      const before = {
+        hurtEntity: entity,
+        damage: amount,
+        damageSource: options?.damageSource ?? { cause: "entityAttack" },
+        cancel: false,
+      };
+      registry.get("before:entityHurt")?.dispatch(before);
+      if (before.cancel) return false;
       entity._health.currentValue = Math.max(0, entity._health.currentValue - amount);
       if (entity._health.currentValue === 0) {
         registry.get("after:entityDie")?.dispatch({
@@ -317,7 +326,11 @@ const makeEntity = (typeId, location, dimension, healthMax = 20, prototype = Ent
         const index = state.entities.indexOf(entity);
         if (index >= 0) state.entities.splice(index, 1);
       }
+      registry.get("after:entityHurt")?.dispatch({ hurtEntity: entity, damage: amount, damageSource: options?.damageSource ?? { cause: "entityAttack" } });
       return entity._health.currentValue === 0;
+    },
+    setHealth: (value) => {
+      entity._health.currentValue = Math.max(0, Math.min(entity._health.effectiveMax, value));
     },
     applyKnockback: () => {},
     playSound: (id, options) => state.sounds.push({ id, entity: entity.name ?? typeId, options }),

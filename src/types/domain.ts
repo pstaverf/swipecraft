@@ -161,6 +161,61 @@ export interface QuarryRow {
   buffer: QuarryDrop[];
 }
 
+export type TotemTierId = "whisper" | "oath" | "ash";
+
+export interface TotemEffectSpec {
+  id: string;
+  seconds: number;
+  amplifier: number;
+}
+
+export interface TotemTierSpec {
+  coinCost: number;
+  emeralds: number;
+  charges: number;
+  effects: TotemEffectSpec[];
+}
+
+/** Запись реестра тотемов: носитель истины о том, сколько спасений ещё «живёт» в предмете. */
+export interface TotemRow {
+  serial: string;
+  tier: TotemTierId;
+  charges: number;
+  forgedAt: number;
+  forgedBy: string;
+  season: number;
+  /** 0 = активен; иначе момент, когда заряд кончился (запись доживает до прунинга) */
+  spentAt: number;
+}
+
+export interface TotemDayCounter {
+  day: string;
+  saves: number;
+  forges: number;
+}
+
+export interface TotemRegistry {
+  season: number;
+  rows: TotemRow[];
+  day: Record<string, TotemDayCounter>;
+  lastSave: Record<string, number>;
+}
+
+/** Ответ модов тотемов: ключ словаря + параметры, как в `QuarryResult`. */
+export interface TotemResult {
+  ok: boolean;
+  key: string;
+  params?: Record<string, string | number>;
+}
+
+export interface TotemTierView {
+  id: TotemTierId;
+  charges: number;
+  coinCost: number;
+  emeralds: number;
+  effects: TotemEffectSpec[];
+}
+
 export type SpawnBuildMode = "build" | "repair";
 
 export interface SpawnBuildState {
@@ -194,6 +249,8 @@ export interface EcoTunables {
   donorTrailsEnabled: boolean;
   /** стоп-кран авто-шахты: карьеры перестают копать на следующем такте */
   quarryEnabled: boolean;
+  /** стоп-кран тотемов: обряд недоступен, спасение не срабатывает, реестр не трогается */
+  totemsEnabled: boolean;
 }
 
 export interface EcoAccount {

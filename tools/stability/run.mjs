@@ -1,5 +1,5 @@
 import * as mc from "./mock-server.mjs";
-import { MinecraftBlockTypes, MinecraftItemTypes } from "@minecraft/vanilla-data";
+import { MinecraftBlockTypes, MinecraftEffectTypes, MinecraftItemTypes } from "@minecraft/vanilla-data";
 import { readFileSync, readdirSync } from "node:fs";
 
 const readSourceFiles = (dir) => {
@@ -193,7 +193,7 @@ const wallet = (id) => meta()[id];
 scenario("boot");
 
 check("все команды слоя зарегистрированы", () => {
-  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta", "sw:quarry", "sw:spawn"];
+  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta", "sw:quarry", "sw:spawn", "sw:totem"];
   const missing = expected.filter((name) => !commands.has(name));
   must(missing.length === 0, `нет команд: ${missing.join(", ")}`);
   return `${expected.length}`;
@@ -1215,7 +1215,7 @@ await step("главное меню: подписи кнопок и перехо
   await open("sw:menu", alice);
   const form = lastForm();
   must(form && form.title.includes("Swipecraft"), `меню не открылось: ${shownTitles().join(" > ")}`);
-  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Авто-шахта", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
+  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Авто-шахта", "Зачарованные тотемы", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
   const missing = expected.filter((part) => !form.buttons.some((label) => label.includes(part)));
   must(missing.length === 0, `нет пунктов: ${missing.join(", ")} (${form.buttons.join(" | ")})`);
   must(form.buttons.length === expected.length, `игроку без admin показали ${form.buttons.length} кнопок вместо ${expected.length}`);
@@ -1577,7 +1577,8 @@ await step("экран карьера и админ-экран модов: по�
   const worldForm = ui.shown.at(-1) ?? lastForm();
   must(worldForm.title.includes("Моды мира"), `админ-экран не открылся: ${worldForm.title}`);
   must(worldForm.body.includes("карьеры:") && worldForm.body.includes("спавн:"), `сводка мод неполная: ${worldForm.body.slice(0, 200)}`);
-  for (const part of ["Карьеры", "Спавн", "Стоп-краны модов"]) must(worldForm.buttons.some((label) => label.includes(part)), `нет действия «${part}»`);
+  must(worldForm.body.includes("тотемы:"), `в сводке модов нет строки про тотемы: ${worldForm.body.slice(0, 260)}`);
+  for (const part of ["Карьеры", "Спавн", "Тотемы", "Стоп-краны модов"]) must(worldForm.buttons.some((label) => label.includes(part)), `нет действия «${part}»`);
   ui.shown.length = 0;
   ui.answers.length = 0;
   clearChat(admin);
@@ -1598,8 +1599,10 @@ await step("экран карьера и админ-экран модов: по�
   answer(fillModal(true, true));
   await open("sw:admin", admin);
   const modal = ui.shown.at(-1);
-  must(modal.controls.length === 3, `тумблеров в форме: ${modal.controls.length}`);
+  must(modal.controls.length === 4, `тумблеров в форме: ${modal.controls.length}`);
   must(modal.controls[2].config?.defaultValue === false, `тумблер не показывает текущее состояние: ${JSON.stringify(modal.controls[2])}`);
+  must(modal.controls[3].config?.defaultValue === true, `тумблер тотемов не показывает текущее состояние: ${JSON.stringify(modal.controls[3])}`);
+  must(readJson("sw:eco:cfg")?.totemsEnabled !== false, "тумблер тотемов слипся в выключенный из-за отсутствующего значения в ответе формы");
   must(/Ни один флаг не изменился/.test(chatOf(admin).join(" / ")), `форма солгала про изменения: ${chatOf(admin).join(" / ")}`);
   reply("sw:meta", admin, "set", "quarryEnabled", "true");
   flush();
@@ -1772,6 +1775,367 @@ await step("алтарь спавна открывает меню и отмен�
   return "cancel + главное меню из мира";
 });
 
+scenario("тотемы (обряд и спасение)");
+
+const TOTEMS_DP = "sw:totems";
+const totemReg = () => readJson(TOTEMS_DP) ?? { season: 0, rows: [], day: {}, lastSave: {} };
+const probeT = () => globalThis.__swipecraftProbe.totems;
+// часы мока — отдельные от тиков: Date.now() === state.clock, и двигает их только mc.advance
+const passMs = (ms) => mc.advance(ms);
+const mockDay = () => new Date(Date.now()).toISOString().slice(0, 10);
+const fireHurt = (player, damage) => {
+  const event = { hurtEntity: player, damage, damageSource: { cause: "entityAttack" }, cancel: false };
+  mc.fire("before", "entityHurt", event);
+  return event;
+};
+const writeJson = (key, value) => {
+  const text = JSON.stringify(value);
+  const size = 7000;
+  const total = Math.max(1, Math.ceil(text.length / size));
+  for (let index = 0; index < total; index += 1) {
+    mc.world.setDynamicProperty(`${key}:${index}`, text.slice(index * size, (index + 1) * size));
+  }
+  mc.world.setDynamicProperty(`${key}:n`, total);
+};
+const giveItem = (player, slot, typeId, amount) => inventoryOf(player).setItem(slot, new mc.ItemStack(typeId, amount));
+const rowOf = (serial) => (totemReg().rows ?? []).find((row) => row.serial === serial);
+const stackOf = (player, slot) => inventoryOf(player).getItem(slot);
+
+let mintedBeforeTotems = 0;
+
+check("носитель обряда, изумруды и эффекты тотемов существуют в 1.26.60", () => {
+  const probe = probeT();
+  const items = new Set(Object.values(MinecraftItemTypes));
+  const effects = new Set(Object.values(MinecraftEffectTypes));
+  must(items.has(probe.TOTEM_CARRIER), `предмета-носителя нет в MinecraftItemTypes: ${probe.TOTEM_CARRIER}`);
+  must(items.has("minecraft:emerald"), "изумруда нет в MinecraftItemTypes");
+  const tiers = probe.totemTiers();
+  must(tiers.length === 3, `ступеней обряда: ${tiers.length}`);
+  const bad = tiers.flatMap((tier) => tier.effects.map((row) => row.id)).filter((id) => !effects.has(`minecraft:${id}`));
+  must(bad.length === 0, `эффектов нет в MinecraftEffectTypes: ${[...new Set(bad)].join(", ")}`);
+  const costs = tiers.map((tier) => probe.totemTierCost(tier.id));
+  must(costs.every((row) => row.coin > 0 && row.emeralds > 0 && row.total > row.coin), `цена обряда собрана неверно: ${JSON.stringify(costs)}`);
+  must(tiers.some((tier) => tier.charges > 1), "ни одна ступень не даёт больше одного спасения — деградацию предмета не проверить");
+  return `${tiers.length} ступени, ${[...new Set(tiers.flatMap((tier) => tier.effects.map((row) => row.id)))].length} эффекта, id подтверждены`;
+});
+
+check("смертельные удары в мок-часы не «слипаются»: у тотема есть пауза и лимит суток", () => {
+  const probe = probeT();
+  must(typeof probe.savePlayer === "function", "мод не отдаёт savePlayer — спасение не проверить");
+  must(typeof probe.clearImmunity === "function", "нет окна неуязвимости для теста");
+  return "пауза, лимит и окно — проверяемые состояния";
+});
+
+await step("тотема в руке нет и изумрудов нет: обряд отказывает, реестр пуст", async () => {
+  await mintTo("Alice", 30000);
+  flush();
+  mintedBeforeTotems = readJson("sw:eco:ledger")?.minted ?? 0;
+  clearChat(alice);
+  const noItem = reply("sw:totem", alice, "forge", "whisper");
+  must(/В руке должен быть ванический тотем/.test(noItem), `обряд без предмета разрешили: ${noItem}`);
+  giveItem(alice, 0, "minecraft:totem_of_undying", 1);
+  const noEmeralds = reply("sw:totem", alice, "forge", "whisper");
+  must(/Нужно \d+ изумрудов/.test(noEmeralds), `обряд без изумрудов разрешили: ${noEmeralds}`);
+  must((totemReg().rows ?? []).length === 0, "отказавший обряд всё-таки создал запись в реестре");
+  must(probeT().findHeldTotem(alice) === undefined, "тотем без заряда считается живым");
+  return "2 отказа, записей и списаний нет";
+});
+
+await step("обряд: монеты сгорели, изумруды съедены, предмет помечен серийником", () => {
+  giveItem(alice, 1, "minecraft:emerald", 10);
+  const before = wallet("p-alice").coins ?? 0;
+  const ledger = readJson("sw:eco:ledger") ?? {};
+  clearChat(alice);
+  const text = reply("sw:totem", alice, "forge", "whisper");
+  must(/✓/.test(text), `обряд не прошёл: ${text}`);
+  const serial = /серия ([a-z0-9]+)/.exec(text)?.[1];
+  must(serial, `в ответе нет серийника: ${text}`);
+  const row = (totemReg().rows ?? [])[0];
+  must(row && row.serial === serial && row.tier === "whisper" && row.charges === 1, `запись реестра: ${JSON.stringify(row)}`);
+  must(row.season === 1, `запись уехала в сезон ${row.season}`);
+  const after = wallet("p-alice").coins ?? 0;
+  must(before - after === 2500, `списание за обряд: ${before} → ${after}`);
+  must((readJson("sw:eco:ledger")?.burned ?? 0) - (ledger.burned ?? 0) === 2500, "обряд не сжёг монеты в реестре экономики");
+  must((readJson("sw:eco:ledger")?.minted ?? 0) === (ledger.minted ?? 0), "обряд напечатал монеты — так нельзя");
+  must(countItem(alice, "minecraft:emerald") === 4, `изумрудов после обряда: ${countItem(alice, "minecraft:emerald")}`);
+  const stack = stackOf(alice, 0);
+  must(stack.getLore().some((line) => line.includes(`#${serial}`)), `серийника нет в лоре: ${JSON.stringify(stack.getLore())}`);
+  must(stack.nameTag.length > 0 && stack.typeId === "minecraft:totem_of_undying", `предмет не переименован: ${stack.nameTag}`);
+  must(/✓ Обряд «шёпот» проведён/.test(text), `ответ команды не подписан: ${text}`);
+  return `#${serial} · −2500 ₡ · −6 изумрудов · лор обновлён`;
+});
+
+await step("повторный обряд на зачарованном тотеме запрещён, лимит обрядов в сутки держит", () => {
+  const text = reply("sw:totem", alice, "forge", "whisper");
+  must(/уже зачарован/.test(text), `двойное зачарование разрешили: ${text}`);
+  must((totemReg().rows ?? []).length === 1, "реестр вырос на пустом месте");
+  giveItem(alice, 5, "minecraft:totem_of_undying", 1);
+  giveItem(alice, 6, "minecraft:emerald", 48);
+  alice.selectedSlotIndex = 5;
+  const ash = reply("sw:totem", alice, "forge", "ash");
+  must(/✓/.test(ash), `второй обряд не прошёл: ${ash}`);
+  giveItem(alice, 7, "minecraft:totem_of_undying", 1);
+  alice.selectedSlotIndex = 7;
+  const third = reply("sw:totem", alice, "forge", "oath");
+  must(/Обрядов в сутки уже 2/.test(third), `третий обряд в сутки разрешили: ${third}`);
+  must((totemReg().rows ?? []).length === 2, `записей в реестре: ${(totemReg().rows ?? []).length}`);
+  return "отказ по серийнику + лимит 2 обряда в сутки";
+});
+
+await step("смертельный удар отменён: HP, эффекты, звук, а экономика молчит", () => {
+  alice.selectedSlotIndex = 0;
+  alice.getComponent("minecraft:health").setCurrentValue(3);
+  const ledger = readJson("sw:eco:ledger") ?? {};
+  const coins = wallet("p-alice").coins ?? 0;
+  clearChat(alice);
+  mc.state.sounds.length = 0;
+  const died = alice.applyDamage(50);
+  must(died === false, `applyDamage вернул смерть ${died} — урон не отменён`);
+  const health = alice.getComponent("minecraft:health");
+  must(health.currentValue === health.effectiveMax, `после спасения HP: ${health.currentValue} из ${health.effectiveMax}`);
+  must(alice._effects.has("regeneration") && alice._effects.has("resistance"), `эффектов окна нет: ${[...alice._effects.keys()].join(",")}`);
+  must(mc.state.sounds.some((row) => row.id === "totem.use"), "звука спасения нет");
+  must(/Последний заряд тотема/.test(chatOf(alice).join(" / ")), `игроку не сказали, что произошло: ${chatOf(alice).join(" / ").slice(0, 160)}`);
+  must((wallet("p-alice").coins ?? 0) === coins, "спасение двинуло баланс");
+  must((readJson("sw:eco:ledger")?.minted ?? 0) === (ledger.minted ?? 0), "спасение напечатало монеты");
+  must((readJson("sw:eco:ledger")?.burned ?? 0) === (ledger.burned ?? 0), "спасение сожгло что-то сверх обряда");
+  return "урон отменён, 20/20 HP, 2 эффекта, ₡ не тронуты";
+});
+
+check("разряженный тотем деградирует в ванический, а не исчезает", () => {
+  const stack = stackOf(alice, 0);
+  must(stack && stack.typeId === "minecraft:totem_of_undying", `предмет пропал из слота: ${JSON.stringify(stack?.typeId)}`);
+  must(stack.getLore().length === 0, `лор не снят: ${JSON.stringify(stack.getLore())}`);
+  must(!stack.nameTag, `имя не снято: ${stack.nameTag}`);
+  must(!probeT().readSerial(stack), "разряженный предмет всё ещё ссылается на серию");
+  must(countItem(alice, "minecraft:totem_of_undying") === 3, `тотемы в инвентаре съехали: ${countItem(alice, "minecraft:totem_of_undying")} вместо 3`);
+  const whisper = (totemReg().rows ?? [])[1];
+  must(whisper.charges === 0 && whisper.spentAt > 0, `разряд не зафиксирован: ${JSON.stringify(whisper)}`);
+  return "обычный тотем на руках, серийника нет, запись помечена";
+});
+
+await step("окно неуязвимости не даёт потратить заряд, а после паузы спасение работает", () => {
+  alice.selectedSlotIndex = 5;
+  const serial = (totemReg().rows ?? []).find((row) => row.tier === "ash").serial;
+  alice.getComponent("minecraft:health").setCurrentValue(2);
+  const first = alice.applyDamage(50);
+  must(first === false, "удар в окне неуязвимости прошёл");
+  must(rowOf(serial).charges === 2, `окно неуязвимости съело заряд: ${rowOf(serial).charges}`);
+  passMs(probeT().immunityLeft(alice.id) + 500);
+  const blocked = fireHurt(alice, 50);
+  must(blocked.cancel === false, "смертельный удар отменён во время паузы между спасениями");
+  must(/После спасения обряд ждать \d+ c/.test(reply("sw:totem", alice, "status")), "в статусе нет паузы между спасениями");
+  passMs(95_000);
+  alice.getComponent("minecraft:health").setCurrentValue(1);
+  const saved = alice.applyDamage(50);
+  must(saved === false, `после паузы спасение не сработало: ${saved}`);
+  must(rowOf(serial).charges === 1, `второе спасение потратило не один заряд: ${rowOf(serial).charges}`);
+  const stack = stackOf(alice, 5);
+  must(stack.getLore().some((line) => line.includes("Зарядов: 1 из 2")), `лор не обновлён: ${JSON.stringify(stack.getLore())}`);
+  must(/сгорел наполовину/.test(chatOf(alice).join(" / ")), `ответа про половину заряда нет: ${chatOf(alice).join(" / ").slice(0, 160)}`);
+  const ac = globalThis.__swipecraftProbe.anticheat;
+  must(ac.graceLeftMs(alice.id) > 0, "спасение не выдало античиту grace-окно — детекторы движения прочитают лечение как аномалию");
+  must(ac.playerScore(alice.id) === 0, `спасение добавило очков античиту: ${ac.playerScore(alice.id)}`);
+  return "окно гасит, пауза держит, после паузы — 2 → 1 заряд, grace выдан";
+});
+
+await step("лимит спасений в сутки считается по мок-часам", () => {
+  const probe = probeT();
+  probe.clearImmunity(alice.id);
+  const serial = (totemReg().rows ?? []).find((row) => row.tier === "ash").serial;
+  const before = rowOf(serial).charges;
+  const reg = totemReg();
+  reg.day["p-alice"] = { day: mockDay(), saves: probe.totemSummary().enabled ? 3 : 3, forges: reg.day?.["p-alice"]?.forges ?? 0 };
+  reg.lastSave = {};
+  writeJson(TOTEMS_DP, reg);
+  probe.loadTotems();
+  clearChat(alice);
+  const refused = fireHurt(alice, 50);
+  must(refused.cancel === false, "лимит спасений в сутки не сработал");
+  must(/Лимит спасений на сегодня: 3/.test(chatOf(alice).join(" / ")), `отказ не назван: ${chatOf(alice).join(" / ").slice(0, 160)}`);
+  must(rowOf(serial).charges === before, "на отказе заряд всё-таки сгорел");
+  return "3/3 спасения — отказ с именем лимита";
+});
+
+await step("стоп-кран totemsEnabled: обряд недоступен, живые заряды не тратятся", () => {
+  const probe = probeT();
+  const serial = (totemReg().rows ?? []).find((row) => row.tier === "ash").serial;
+  const before = rowOf(serial).charges;
+  // сбрасываем паузу и суточные счётители ДО выключения: иначе отказ спасения был бы
+  // заслуг кулдауна, а не стоп-крана, и проверка ничего не проверяла бы
+  writeJson(TOTEMS_DP, { ...totemReg(), day: {}, lastSave: {} });
+  probe.loadTotems();
+  probe.clearImmunity(alice.id);
+  reply("sw:meta", admin, "set", "totemsEnabled", "false");
+  flush();
+  const off = reply("sw:totem", alice, "forge", "whisper");
+  must(/Тотемы выключены администратором/.test(off), `стоп-кран пропустил обряд: ${off}`);
+  const blocked = fireHurt(alice, 50);
+  must(blocked.cancel === false, "выключенный мод всё равно отменил смерть");
+  must(rowOf(serial).charges === before, "стоп-кран потратил заряд");
+  must(/Тотемы: выключены \(стоп-кран\)/.test(reply("sw:totem", alice, "status")), "в статусе не видно стоп-крана");
+  reply("sw:meta", admin, "set", "totemsEnabled", "true");
+  flush();
+  probe.clearImmunity(alice.id);
+  const saved = fireHurt(alice, 50);
+  must(saved.cancel === true, "после включения спасение не вернулось");
+  must(rowOf(serial).charges === before - 1, "после включения заряд не потратился");
+  return `обряд и спасение выключаются одним флагом (зарядов было ${before})`;
+});
+
+await step("отзыв по серийнику, чужой сезон и прунинг разряженных записей", () => {
+  const probe = probeT();
+  const reg = totemReg();
+  giveItem(alice, 8, "minecraft:totem_of_undying", 1);
+  giveItem(alice, 9, "minecraft:emerald", 10);
+  alice.selectedSlotIndex = 8;
+  writeJson(TOTEMS_DP, { ...reg, day: {}, lastSave: {} });
+  probeT().loadTotems();
+  const forgedBack = reply("sw:totem", alice, "forge", "whisper");
+  must(/✓/.test(forgedBack), `обряд после отзыва не проходит: ${forgedBack}`);
+  const freshSerial = /серия ([a-z0-9]+)/.exec(forgedBack)?.[1];
+  const revoked = reply("sw:totem", admin, "revoke", freshSerial);
+  must(/✓ Заряды тотема/.test(revoked), `отзыв не прошёл: ${revoked}`);
+  must(rowOf(freshSerial).charges === 0 && rowOf(freshSerial).spentAt > 0, `после отзыва запись не погасла: ${JSON.stringify(rowOf(freshSerial))}`);
+  must(probe.findHeldTotem(alice) === undefined, "отозванный серийник всё ещё даёт спасение");
+  const second = reply("sw:totem", admin, "revoke", freshSerial);
+  must(/в реестре нет/.test(second), `повторный отзыв не назван: ${second}`);
+  const itemsBefore = countItem(alice, "minecraft:totem_of_undying");
+  must(countItem(alice, "minecraft:totem_of_undying") === itemsBefore, "отзыв изменил предметы игрока");
+  // отзыв гасит заряд в реестре и НЕ трогает предмет; а последний сгоревший заряд — наоборот,
+  // всегда возвращает предмет в ванический вид. Два разных исхода, обе ветки должны держаться.
+  must(stackOf(alice, 8).getLore().some((line) => line.includes(`#${freshSerial}`)), "отзыв полез в предмет: реестр — единственный источник истины");
+  must(stackOf(alice, 5).getLore().length === 0, "пепел, разряженный последним зарядом, не вернулся в ванический вид");
+  reg.rows = reg.rows.map((row) => ({ ...row, season: 7 }));
+  writeJson(TOTEMS_DP, reg);
+  probe.loadTotems();
+  must(probe.totemRows().every((row) => !probe.isRowLive(row)), "запись чужого сезона считается живой");
+  const dropped = probe.pruneTotems(Date.now() + 8 * 24 * 60 * 60 * 1000);
+  must(dropped === reg.rows.length, `прунинг вынес ${dropped} из ${reg.rows.length} (в ttl разряженные живут 7 суток)`);
+  const afterPrune = totemReg();
+  must(afterPrune.rows.length === 0, `после прунинга в реестре ${afterPrune.rows.length} записей`);
+  writeJson(TOTEMS_DP, {
+    season: 1,
+    rows: [
+      { serial: "liveser1", tier: "oath", charges: 1, forgedAt: Date.now(), forgedBy: "Zed", season: 1, spentAt: 0 },
+      { serial: "spentser", tier: "whisper", charges: 0, forgedAt: 0, forgedBy: "Zed", season: 1, spentAt: Date.now() - 1000 },
+    ],
+    day: {},
+    lastSave: {},
+  });
+  probe.loadTotems();
+  const kept = probe.pruneTotems(Date.now() + 8 * 24 * 60 * 60 * 1000);
+  must(kept === 1, `из живого+разряженного вычищено ${kept}`);
+  must(probe.totemRows().length === 1 && probe.totemRows()[0].serial === "liveser1", "прунинг снёс живую запись");
+  must(countItem(alice, "minecraft:totem_of_undying") === itemsBefore, "реестр тронул предметы игрока");
+  probeT().revokeTotem(admin.name, "liveser1");
+  probe.pruneTotems();
+  return "отзыв, мёртвый сезон и ttl прунинга";
+});
+
+await step("экран тотемов: статус, выбор обряда и правила", async () => {
+  writeJson(TOTEMS_DP, { season: 1, rows: [], day: {}, lastSave: {} });
+  probeT().loadTotems();
+  giveItem(alice, 0, "minecraft:totem_of_undying", 1);
+  giveItem(alice, 1, "minecraft:emerald", 10);
+  alice.selectedSlotIndex = 0;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Зачарованные тотемы"));
+  await open("sw:menu", alice);
+  const form = lastForm();
+  must(form.title.includes("Зачарованные тотемы"), `открылась не форма тотемов: ${form.title}`);
+  must(/Тотемы: включены/.test(form.body), `в теле формы нет состояния мода: ${form.body.slice(0, 200)}`);
+  must(/Заряженного тотема в инвентаре нет/.test(form.body), `пустой инвентарь не подписан: ${form.body.slice(0, 200)}`);
+  must(/Сегодня: спасений 0\/3, обрядов 0\/2/.test(form.body), `суточные лимиты не показаны: ${form.body.slice(0, 260)}`);
+  for (const part of ["Провести обряд", "Как это работает", "В главное меню"]) {
+    must(form.buttons.some((label) => label.includes(part)), `нет кнопки «${part}»: ${form.buttons.join(" | ")}`);
+  }
+  must(/пепел: 2 спасен/.test(form.body), `в теле формы нет строки пепла: ${form.body.slice(0, 400)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Как это работает"));
+  await open("sw:totem", alice, "ui");
+  must(/Держи в руке ванический тотем/.test(chatOf(alice).join(" / ")), `правила тотемов не распечатаны: ${chatOf(alice).join(" / ").slice(0, 120)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Провести обряд"));
+  await open("sw:totem", alice, "ui");
+  const pick = ui.shown.at(-1);
+  must(pick.buttons.length === 4, `в экране выбора обряда кнопок: ${pick.buttons.length} (${pick.buttons.join(" | ")})`);
+  must(/пепел · 2 спасен\./.test(pick.buttons.join(" | ")), `подписи ступеней без заряда и цены: ${pick.buttons.join(" | ")}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(alice);
+  answer(pressLabel("Провести обряд"));
+  answer(pressLabel("шёпот"));
+  answer(pressLabel("Подтвердить"));
+  await open("sw:totem", alice, "ui");
+  const picked = chatOf(alice).join(" / ");
+  must(/✓ Обряд «шёпот» проведён/.test(picked), `обряд из формы не ответил: ${picked.slice(0, 200)}`);
+  const forgedRow = (totemReg().rows ?? [])[0];
+  must(forgedRow && forgedRow.tier === "whisper" && forgedRow.charges === 1, `обряд из формы не создал запись: ${JSON.stringify(forgedRow)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  await open("sw:totem", alice, "ui");
+  const after = lastForm();
+  must(after.body.includes(forgedRow.serial) && /зарядов 1\/1/.test(after.body), `после обряда статус не обновился: ${after.body.slice(0, 240)}`);
+  return `${form.buttons.length} кнопок на экране тотемов, обряд из формы виден в статусе`;
+});
+
+await step("админ-экран тотемов: список, отзыв по кнопке и пустой реестр", async () => {
+  giveItem(alice, 7, "minecraft:totem_of_undying", 1);
+  giveItem(alice, 8, "minecraft:emerald", 10);
+  alice.selectedSlotIndex = 7;
+  writeJson(TOTEMS_DP, { ...totemReg(), day: {}, lastSave: {} });
+  probeT().loadTotems();
+  const forged = reply("sw:totem", alice, "forge", "whisper");
+  must(/✓/.test(forged), `обряд для админ-проверки не прошёл: ${forged}`);
+  const serial = /серия ([a-z0-9]+)/.exec(forged)?.[1];
+  const coinsBefore = wallet("p-alice").coins ?? 0;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Тотемы"));
+  answer(pressLabel(`Отозвать #${serial}`));
+  await open("sw:admin", admin);
+  const screens = ui.shown.map((row) => row.title);
+  must(screens.some((title) => title.includes("Тотемы")), `цепочка админ-экранов оборвалась: ${screens.join(" > ")}`);
+  const chat = chatOf(admin).join(" / ");
+  must(/✓ Заряды тотема/.test(chat), `кнопка отзыва не сработала: ${chat.slice(0, 200)}`);
+  must(rowOf(serial).charges === 0, "отзыв из формы не погасил заряд");
+  must((wallet("p-alice").coins ?? 0) === coinsBefore, "отзыв тронул монеты — он обязан быть бесплатным");
+  writeJson(TOTEMS_DP, { season: 1, rows: [], day: {}, lastSave: {} });
+  probeT().loadTotems();
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Тотемы"));
+  await open("sw:admin", admin);
+  const empty = ui.shown.at(-1);
+  must(empty.title.includes("Тотемы"), `пустой экран тотемов не открылся: ${empty.title}`);
+  must(/Реестр тотемов пуст/.test(empty.body), `пустого реестра не видно: ${empty.body.slice(0, 160)}`);
+  must(empty.buttons.length === 1, `на пустом экране кнопок: ${empty.buttons.length} (${empty.buttons.join(" | ")})`);
+  return "отзыв кнопкой + пустой экран";
+});
+
+check("тотемы не напечатали ни одной монеты за весь прогон", () => {
+  const ledger = readJson("sw:eco:ledger") ?? {};
+  must(mintedBeforeTotems > 0, "не зафиксирована отправная точка по minted");
+  must((ledger.minted ?? 0) === mintedBeforeTotems, `эмиссия за время сценария: ${(ledger.minted ?? 0) - mintedBeforeTotems} ₡`);
+  must((ledger.burned ?? 0) > 0, "за весь сценарий ничего не сгорело — обряд не тестировался");
+  const summary = probeT().totemSummary();
+  must(typeof summary.live === "number" && typeof summary.savesToday === "number", `сводка неполная: ${JSON.stringify(summary)}`);
+  must(mc.state.dispatchErrors.length === 0, `ошибок в диспетчер событий: ${mc.state.dispatchErrors.length} (${mc.state.dispatchErrors.slice(-1)})`);
+  return `minted ${ledger.minted}, burned ${ledger.burned}, живых зарядов ${summary.live}`;
+});
+
 check("id блоков и предметов карьера существуют в 1.26.60", () => {
   const minable = globalThis.__swipecraftProbe.quarry.QUARRY_MINABLE;
   const blocks = new Set(Object.values(MinecraftBlockTypes));
@@ -1786,12 +2150,12 @@ check("id блоков и предметов карьера существуют
 
 check("словари модов переведены и не оставляют сырых ключей", () => {
   const i18n = globalThis.__swipecraftProbe.i18n;
-  const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build"];
+  const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build", "totem.title", "totem.forge", "totem.err.off", "ui.totems", "admin.world.totem.line"];
   const raw = keys.filter((key) => i18n.raw("ru", key) === key || i18n.raw("en", key) === key);
   must(raw.length === 0, `ключей нет в словаре: ${raw.join(", ")}`);
   const stats = i18n.dictionaryStats();
   must(stats.missingEn.length === 0 && stats.missingRu.length === 0, `ru/en разъехались: ${stats.missingEn.join(",")}|${stats.missingRu.join(",")}`);
-  return `${keys.length} ключей модов, ru/en по ${stats.ru}/${stats.en}`;
+  return `${keys.length} ключей модов и тотемов, ru/en по ${stats.ru}/${stats.en}`;
 });
 
 check("ни один ключ не уехал в текст без перевода", () => {
@@ -1809,11 +2173,19 @@ check("в словаре модов мира нет мёртвых ключей"
   }));
   must(blocks.length === 2, `в файле найдено блоков словаря: ${blocks.length} (ждали ru и en)`);
   const [ruBlock, enBlock] = blocks;
-  must(ruBlock.keys.length >= 30, `ключей в ru-блоке модов: ${ruBlock.keys.length}`);
+  must(ruBlock.keys.length >= 110, `ключей в ru-блоке модов: ${ruBlock.keys.length} — словарь модов не долженхудеть без причины`);
   const asymmetry = ruBlock.keys.filter((key) => !enBlock.keys.includes(key)).concat(enBlock.keys.filter((key) => !ruBlock.keys.includes(key)));
   must(asymmetry.length === 0, `ru и en модов разъехались: ${asymmetry.join(", ")}`);
   const blob = readSourceFiles("src");
-  const dead = ruBlock.keys.filter((key) => !blob.includes(`"${key}"`));
+  // ключи вида `totem.name.${tier}` собираются шаблоном: считаем их живыми, только если в коде
+  // есть префикс этого шаблона — опечатка в имени ступени тогда не останется незамеченной
+  const templateFamilies = ["totem.name.", "totem.tier.", "totem.effect."];
+  const usedByKey = (key) => {
+    if (blob.includes(`"${key}"`)) return true;
+    const family = templateFamilies.find((prefix) => key.startsWith(prefix));
+    return family ? blob.includes("`" + family) : false;
+  };
+  const dead = ruBlock.keys.filter((key) => !usedByKey(key));
   must(dead.length === 0, `мёртвые ключи (из кода их никто не запрашивает): ${dead.join(", ")}`);
   return `${ruBlock.keys.length} ключей, ru/en симметричны, все запрошены из кода`;
 });
