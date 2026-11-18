@@ -14,11 +14,12 @@ import { openClan } from "./clans";
 import { openProgress } from "./progress";
 import { openDonate } from "./donations";
 import { openCosmetics, openReferral } from "./referrals";
+import { openRanks } from "./ranks";
 import "./messages";
 
 export const isAdmin = (player: Player): boolean => player.hasTag("admin");
 
-type MenuAction = "quarry" | "totems" | "wallet" | "market" | "cases" | "clan" | "progress" | "donate" | "cosmetics" | "ref" | "rtp" | "rules" | "stats" | "lang" | "admin" | "close";
+type MenuAction = "quarry" | "totems" | "wallet" | "ranks" | "market" | "cases" | "clan" | "progress" | "donate" | "cosmetics" | "ref" | "rtp" | "rules" | "stats" | "lang" | "admin" | "close";
 type MenuEntry = { readonly key: string; readonly action: MenuAction };
 
 /**
@@ -34,6 +35,7 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   { key: "ui.progress", action: "progress" },
   { key: "ui.donate", action: "donate" },
   { key: "ui.cosmetics", action: "cosmetics" },
+  { key: "ui.ranks", action: "ranks" },
   { key: "ui.ref", action: "ref" },
   { key: "ui.quarry", action: "quarry" },
   { key: "ui.totems", action: "totems" },
@@ -81,6 +83,9 @@ export const openMenu = async (player: Player): Promise<void> => {
         return;
       case "cosmetics":
         await openCosmetics(player);
+        return;
+      case "ranks":
+        await openRanks(player);
         return;
       case "ref":
         await openReferral(player);

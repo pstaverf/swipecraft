@@ -12,6 +12,7 @@ import { clanCacheStats, flushClans, loadClans, onPvpKill, pruneClans, settleWar
 import { autoGrantGift, flushDonations, loadDonations, queueOnSpawn, queueTick, refreshNameTag, trailSweep, unqueue } from "./donations";
 import { flushProgress, isOre, loadProgress, recordDeath, recordKill, recordMobKill, recordOre, setClanTag, streakDecay, updateTopRow } from "./progress";
 import { flushCosmetics, announceJoin, loadCosmetics } from "./cosmetics";
+import { rankReport, syncRankTags, syncRankTagsFor } from "./ranks";
 import { codeOf, flushReferrals, loadReferrals, referralReport, rewardSweep } from "./referrals";
 import { disputeLines, goalReport } from "./donations";
 import "./messages";
@@ -30,6 +31,8 @@ const onSpawn = (player: Player): void => {
   safeStep("meta:spawn", () => {
     autoGrantGift(player);
     codeOf(player);
+    // порядок важен: rankTag должен попасть в nameTag тем же вызовом applyIdentity
+    safeStep("meta:ranks", () => syncRankTagsFor(player));
     refreshNameTag(player);
     announceJoin(player);
     updateTopRow(player);
@@ -154,6 +157,13 @@ export const initMeta = (): void => {
     streakDecay();
   });
 
+  // префикс над головой — производная от (кран, лучший ранг): пока задачу не гонять,
+  // поворот стоп-крана будет виден только после следующей смены косметики
+  registerTask("meta-ranks", 600, 2, () => {
+    const changed = syncRankTags();
+    if (changed > 0) log.debug("ranks", `префиксов обновлено: ${changed}`);
+  });
+
   registerTask("meta-ref", 600, 4, () => {
     rewardSweep();
   });
@@ -193,6 +203,8 @@ export const metaAdminLines = (): string[] => [
   "кланы:",
   ...storageReport().slice(0, 4),
   `кэш документов: ${clanCacheStats().docs}, грязных ${clanCacheStats().dirty}`,
+  "ранги:",
+  ...rankReport(),
   "донат:",
   ...goalReport(),
   ...disputeLines().slice(0, 3),

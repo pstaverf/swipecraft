@@ -193,7 +193,7 @@ const wallet = (id) => meta()[id];
 scenario("boot");
 
 check("все команды слоя зарегистрированы", () => {
-  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta", "sw:quarry", "sw:spawn", "sw:totem"];
+  const expected = ["sw:menu", "sw:rtp", "sw:admin", "sw:ac", "sw:event", "sw:eco", "sw:market", "sw:case", "sw:clan", "sw:quest", "sw:don", "sw:shop", "sw:ref", "sw:meta", "sw:quarry", "sw:spawn", "sw:totem", "sw:hud", "sw:rank"];
   const missing = expected.filter((name) => !commands.has(name));
   must(missing.length === 0, `нет команд: ${missing.join(", ")}`);
   return `${expected.length}`;
@@ -1215,7 +1215,7 @@ await step("главное меню: подписи кнопок и перехо
   await open("sw:menu", alice);
   const form = lastForm();
   must(form && form.title.includes("Swipecraft"), `меню не открылось: ${shownTitles().join(" > ")}`);
-  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Пригласить друга", "Авто-шахта", "Зачарованные тотемы", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
+  const expected = ["Кошелёк", "Рынок игроков", "Кейсы", "Кланы", "Квесты и награды", "Донат", "Косметика", "Ранги", "Пригласить друга", "Авто-шахта", "Зачарованные тотемы", "Случайная телепортация", "Правила мира", "Моя статистика", "Язык / Language", "Закрыть"];
   const missing = expected.filter((part) => !form.buttons.some((label) => label.includes(part)));
   must(missing.length === 0, `нет пунктов: ${missing.join(", ")} (${form.buttons.join(" | ")})`);
   must(form.buttons.length === expected.length, `игроку без admin показали ${form.buttons.length} кнопок вместо ${expected.length}`);
@@ -1599,7 +1599,7 @@ await step("экран карьера и админ-экран модов: по�
   answer(fillModal(true, true));
   await open("sw:admin", admin);
   const modal = ui.shown.at(-1);
-  must(modal.controls.length === 5, `тумблеров в форме: ${modal.controls.length}`);
+  must(modal.controls.length === 8, `тумблеров в форме: ${modal.controls.length}`);
   must(modal.controls[2].config?.defaultValue === false, `тумблер не показывает текущее состояние: ${JSON.stringify(modal.controls[2])}`);
   must(modal.controls[3].config?.defaultValue === true, `тумблер тотемов не показывает текущее состояние: ${JSON.stringify(modal.controls[3])}`);
   must(modal.controls[4].config?.defaultValue === true, `тумблер защиты спавна не показывает текущее состояние: ${JSON.stringify(modal.controls[4])}`);
@@ -2392,9 +2392,320 @@ check("id блоков и предметов карьера существуют
   return `${Object.keys(minable).length} пород, 0 несуществующих id`;
 });
 
+scenario("ранги и таблица статуса");
+
+let mintedBeforeRanks = 0;
+
+const profileOf = (player) => JSON.parse(player.getDynamicProperty(`sw:p:${player.id}`) ?? "{}");
+
+check("отправная точка эмиссии зафиксирована", () => {
+  flush();
+  mintedBeforeRanks = readJson("sw:eco:ledger")?.minted ?? 0;
+  must(mintedBeforeRanks > 0, `ledger.minted = ${mintedBeforeRanks}`);
+  return `${mintedBeforeRanks} ₡`;
+});
+
+check("игровое время копится по суткам и обнуляется на границе дня", () => {
+  const before = profileOf(alice);
+  must(typeof before.playSeconds === "number", `профиля нет или playSeconds не число: ${JSON.stringify(before).slice(0, 120)}`);
+  must(typeof before.playToday === "number" && typeof before.playDay === "number", `сутки не считаются: ${JSON.stringify(before).slice(0, 160)}`);
+  passMs(5 * 60 * 1000);
+  mc.tickTimes(1201);
+  const after = profileOf(alice);
+  must(after.playSeconds >= before.playSeconds + 300, `всего: ${before.playSeconds} → ${after.playSeconds}`);
+  must(after.playToday >= before.playToday + 300, `за сегодня: ${before.playToday} → ${after.playToday}`);
+  must(after.playDay === before.playDay, `ключ суток уехал без причины: ${before.playDay} → ${after.playDay}`);
+  // переползаем через полночь (UTC-сутки, как и везде в мире): «сегодня» обнуляется, «всего» — нет
+  passMs(86_400_000 - (Date.now() % 86_400_000) + 61_000);
+  // бар читаем ДО сейва: только тогда видно, что живая часть сессии не порезана по
+  // полуночи (после saveProfile профиль уже «правильный», и проверка стала бы вакуумной)
+  const barLine = globalThis.__swipecraftProbe.hud.hudLine(alice).replace(/§./g, "");
+  const todayValue = (/За сегодня: ([^·]+)/.exec(barLine) ?? [])[1]?.trim() ?? "";
+  const unit = { с: 1, м: 60, ч: 3600, д: 86_400 }[todayValue.slice(-1)] ?? 0;
+  const todaySeconds = Number.parseInt(todayValue, 10) * unit;
+  must(Number.isFinite(todaySeconds) && todaySeconds <= 180, `в bar утекло вчерашнее время: «${todayValue}» (${barLine})`);
+  mc.tickTimes(1201);
+  const next = profileOf(alice);
+  must(next.playDay !== after.playDay, `сутки не сменились: ${after.playDay} → ${next.playDay}`);
+  must(next.playToday < 300, `после полуночи «сегодня» = ${next.playToday} — счётчик не обнулился`);
+  must(next.playSeconds >= after.playSeconds + 60, `всё время должно только расти: ${after.playSeconds} → ${next.playSeconds}`);
+  return `всего ${next.playSeconds}с, сегодня ${next.playToday}с, день ${next.playDay}`;
+});
+
+const ranksProbe = () => globalThis.__swipecraftProbe.ranks;
+const hudP = () => globalThis.__swipecraftProbe.hud;
+
+check("выдача ранга ставит префикс над головой и в кошелёк", () => {
+  const coins = wallet("p-alice").coins;
+  must(coins >= 2400 * 6, `на балансе Alice ${coins} — не хватает на 6 круток, тест надо переставлять`);
+  const value = ranksProbe().grantRank(alice, "rune", { actor: "стаб-тест" });
+  must(value.ok, `выдача отказала: ${value.key}`);
+  must(ranksProbe().rankProbe(alice).best === "rune", `лучший ранг: ${ranksProbe().rankProbe(alice).best}`);
+  must(alice.nameTag.includes("[руны]"), `nameTag: ${alice.nameTag}`);
+  flush();
+  must((wallet("p-alice").rankOwned ?? []).includes("rune"), `rankOwned: ${JSON.stringify(wallet("p-alice").rankOwned)}`);
+  must(wallet("p-alice").coins === coins, `ранг за счёт экономики: ${coins} → ${wallet("p-alice").coins}`);
+  return `tag=${alice.nameTag.slice(0, 12)}…, монеты ${coins} не тронуты`;
+});
+
+check("дубль ранга компенсируется монетами, а ранг не теряется", () => {
+  const before = wallet("p-alice").coins;
+  const owned = (wallet("p-alice").rankOwned ?? []).length;
+  const price = 2400;
+  const value = ranksProbe().grantRank(alice, "rune", { actor: "стаб-тест", paid: price });
+  must(value.ok && value.key === "rank.dup.refund", `ожидали компенсацию, получили ${value.key}`);
+  must(value.refund === Math.round(price * 0.6), `компенсация ${value.refund} вместо ${Math.round(price * 0.6)}`);
+  flush();
+  const record = wallet("p-alice");
+  must(record.coins === before + value.refund, `монеты: ${before} → ${record.coins} (refund ${value.refund})`);
+  must((record.rankOwned ?? []).length === owned, `дубль изменил коллекцию: ${owned} → ${(record.rankOwned ?? []).length}`);
+  must(record.rank === "rune", `лучший ранг после дубля: ${record.rank}`);
+  return `+${value.refund} ₡ за дубль, рангов ${owned}`;
+});
+
+check("ранг ниже текущего идёт в коллекцию, но не на ник", () => {
+  const tag = alice.nameTag;
+  const before = wallet("p-alice").coins;
+  const value = ranksProbe().grantRank(alice, "steel", { actor: "стаб-тест", paid: 2400 });
+  must(value.ok && /rank\.below/.test(value.key), `ожидали «ниже текущего», получили ${value.key}`);
+  must(alice.nameTag === tag, `ник переписан младшим рангом: ${tag} → ${alice.nameTag}`);
+  flush();
+  const record = wallet("p-alice");
+  must(record.coins === before + (value.refund ?? 0), `компенсация не дошла: ${before} → ${record.coins}`);
+  must(record.rank === "rune", `лучший ранг съехал: ${record.rank}`);
+  must((record.rankOwned ?? []).includes("steel"), `коллекция потеряла steel: ${JSON.stringify(record.rankOwned)}`);
+  return `steel в коллекции (+${value.refund} ₡), на нике остался rune`;
+});
+
+check("стоп-кран рангов снимает префикс и закрывает кейс — и возвращает обратно", () => {
+  // какой ранг лучший — не важно и не предсказуемо (крутки выше могли поднять планку),
+  // поэтому сравниваем nameTag с тем тегом, который модуль считает текущим
+  const tag = ranksProbe().rankProbe(alice).tag.trim();
+  must(tag.length > 0, `тега нет вообще: ${JSON.stringify(ranksProbe().rankProbe(alice))}`);
+  must(alice.nameTag.includes(tag), `префикса уже нет, а тест ещё ничего не выключал: ${alice.nameTag}`);
+  const coins = wallet("p-alice").coins;
+  metaSet("ranksEnabled", false);
+  const changed = ranksProbe().syncRankTags();
+  must(changed >= 1, `syncRankTags вернул ${changed} — префикс не снят`);
+  must(!alice.nameTag.includes(tag), `префикс остался после выключения: ${alice.nameTag}`);
+  flush();
+  must(wallet("p-alice").rankTag === "", `rankTag в кошельке: ${JSON.stringify(wallet("p-alice").rankTag)}`);
+  const off = ranksProbe().rollRanks(alice, 1);
+  must(!off.ok && off.key === "rank.off", `кейс не закрыт: ${off.key}`);
+  flush();
+  must(wallet("p-alice").coins === coins, `на закрытом кейсе монеты ушли: ${coins} → ${wallet("p-alice").coins}`);
+  metaSet("ranksEnabled", true);
+  must(ranksProbe().syncRankTags() >= 1, "обратный поворот крана ничего не вернул");
+  must(alice.nameTag.includes(ranksProbe().rankProbe(alice).tag.trim()), `префикс не вернулся: ${alice.nameTag}`);
+  must(ranksProbe().rollRanks(alice, 1).ok, "кейс не открылся после возврата крана");
+  return `«${tag}» снят и вернулся, закрытый кейс не сжёг ни ₡`;
+});
+
+check("кейс рангов: все дубли → детерминированный итог по монетам", () => {
+  for (const id of ["bronze", "steel", "rune", "elite", "legend", "myth", "novice"]) ranksProbe().grantRank(alice, id, { actor: "стаб-тест" });
+  flush();
+  const before = wallet("p-alice").coins;
+  const value = ranksProbe().rollRanks(alice, 5);
+  must(value.ok, `крутка отказала: ${value.key}`);
+  must(value.lines.length === 5, `строк результата: ${value.lines.length}`);
+  must(value.lines.every((line) => line.includes("дубль")), `не все строки помечены как дубли: ${value.lines.join(" | ").slice(0, 220)}`);
+  const delta = before - wallet("p-alice").coins;
+  // 5 × 2400 сгорает, 5 × 1440 возвращается: ровно 4800, без «плавающего» результата
+  must(delta === 4800, `баланс изменился на ${delta}, ожидалось 4800`);
+  flush();
+  const ledger = readJson("sw:eco:ledger") ?? {};
+  must((ledger.minted ?? 0) === mintedBeforeRanks, `ранги напечатали ${(ledger.minted ?? 0) - mintedBeforeRanks} ₡`);
+  return `5 круток → -${delta} ₡, компенсаций ${value.params.refunded}`;
+});
+
+check("пустой кошелёк: крутка отказывает и ничего не сжигает", () => {
+  const before = wallet("p-carl")?.coins ?? 0;
+  const value = ranksProbe().rollRanks(carl, 1);
+  must(!value.ok, `крутка за чужой счёт прошла: ${JSON.stringify(value)}`);
+  must(value.key === "eco.balance.low", `ключ отказа: ${value.key}`);
+  flush();
+  must((wallet("p-carl")?.coins ?? 0) === before, `монеты Карла изменились: ${before} → ${wallet("p-carl")?.coins}`);
+  return `отказ ${value.key}`;
+});
+
+check("строка статуса: ранг, баланс, сегодня и всё время", () => {
+  hudP().setHudBar(alice, true);
+  hudP().refreshHudBar();
+  // бар уже красился задачей, поэтому проверяем не «был ли written», а что writes вообще есть
+  must(hudP().hudProbe().barWrites > 0, "ни одной записи в action bar за прогон");
+  const text = (hudP().hudProbe().lastText.find(([id]) => id === "p-alice") ?? [])[1] ?? "";
+  const plain = text.replace(/§./g, "");
+  must(plain.includes("Ранг: Мифический"), `ранга в строке нет: ${plain}`);
+  must(/Баланс: \d[\d ]*/.test(plain), `баланс не в строке: ${plain}`);
+  must(/За сегодня: \d+[смчд]/.test(plain), `сегодня не в строке: ${plain}`);
+  must(/За всё время: \d+[смчд]/.test(plain), `всё время не в строке: ${plain}`);
+  must(plain.split("·").length === 4, `в строке ${plain.split("·").length} полей, ждали 4: ${plain}`);
+  must(!text.includes("₡"), `символ валюты уехал в action bar: ${text}`);
+  must(!/[a-z]+\.[a-z]+\./.test(text), `в строке сырой ключ словаря: ${text}`);
+  return text;
+});
+
+check("бар не пишет повторно одно и то же и слушается локального off", () => {
+  must(hudP().refreshHudBar() === 0, "второй подряд refresh написал текст заново");
+  const off = hudP().setHudBar(alice, false);
+  must(off.key === "hud.bar.off", `off вернул ${off.key}`);
+  const last = mc.state.actionBars.filter((row) => row.to === "Alice").at(-1);
+  must(last && last.value === "", `бар не очищен: ${JSON.stringify(last)}`);
+  must(hudP().hudProbe().manualOff.includes("p-alice"), "off не запомнен");
+  const on = hudP().setHudBar(alice, true);
+  must(on.key === "hud.bar.on" && on.params.line.length > 10, `on вернул ${on.key}`);
+  return "off/on работают, дублей записи нет";
+});
+
+check("глобальный тумблер бара перекрывает локальное «on»", () => {
+  metaSet("hudBarEnabled", false);
+  hudP().refreshHudBar();
+  const cleared = mc.state.actionBars.filter((row) => row.to === "Alice").at(-1);
+  must(cleared && cleared.value === "", `бар не снят глобальным тумблером: ${JSON.stringify(cleared)}`);
+  const gated = hudP().setHudBar(alice, true);
+  must(gated.key === "hud.bar.gated", `локальное on обошло гейт: ${gated.key}`);
+  metaSet("hudBarEnabled", true);
+  must(hudP().refreshHudBar() >= 1, "после включения тумблера бар не вернулся");
+  return "гейт виден и снимается обратно";
+});
+
+check("сайдбар: топ по монетам сверху, призрачных строк нет", () => {
+  hudP().refreshHudSidebar();
+  const lines = mc.scoreboardLines();
+  must(lines.length >= 3, `строк сайдбара: ${lines.length}`);
+  must(mc.scoreboardTitle() === "§6Swipecraft", `заголовок: ${mc.scoreboardTitle()}`);
+  const entry = mc.state.scoreboard.slots.get("Sidebar");
+  must(entry.sortOrder === 1, `порядок сортировки ${entry.sortOrder} — Descending = 1`);
+  const byLabel = new Map(entry.objective.getScores().map((row) => [row.participant.displayName, row.score]));
+  const shown = lines.map((line) => byLabel.get(line) ?? -1);
+  must(shown.every((value) => value >= 0), `в объективе нет части показанных строк: ${shown.join(", ")}`);
+  for (let index = 1; index < shown.length; index += 1) {
+    must(shown[index - 1] >= shown[index], `строки не по убыванию: ${shown.join(", ")}`);
+  }
+  must(lines[0].includes("1.") && lines[0].includes("Alice"), `первая строка: ${lines[0]}`);
+  const rows = new Set(hudP().hudSidebarRows().map((row) => row.label));
+  const ghosts = lines.filter((line) => !rows.has(line));
+  must(ghosts.length === 0, `в сайдбаре остались старые строки: ${ghosts.join(" | ")}`);
+  must(lines.some((line) => line.includes("Игроков онлайн")), `онлайна нет: ${lines.join(" | ")}`);
+  return `${lines.length} строк: ${lines.map((line) => line.replace(/§./g, "")).join(" | ")}`.slice(0, 200);
+});
+
+check("тумблер сайдбара снимает слот отображения, а не бросает", () => {
+  metaSet("hudSidebarEnabled", false);
+  hudP().refreshHudSidebar();
+  must(mc.world.scoreboard.getObjectiveAtDisplaySlot("Sidebar") === undefined, "слот не освобождён");
+  metaSet("hudSidebarEnabled", true);
+  hudP().refreshHudSidebar();
+  must(mc.world.scoreboard.getObjectiveAtDisplaySlot("Sidebar") !== undefined, "слот не вернулся");
+  return "слот освобождается и возвращается";
+});
+
+const settle = async (ticks = 10) => {
+  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+await step("меню: «Ранги» открывает кейс, крутка из формы доходит до кошелька", async () => {
+  await settle();
+  const before = wallet("p-alice").coins;
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  // ответы разбираются формами по порядку: сначала меню, потом сам кейс рангов
+  answer(pressLabel("Ранги"));
+  answer(pressLabel("Крутить кейс рангов ×1"));
+  await open("sw:menu", alice);
+  const titles = shownTitles().join(" > ");
+  must(titles.includes("Swipecraft — меню"), `меню не открылось: ${titles}`);
+  const form = lastForm();
+  must(form && form.title.includes("Ранги"), `кейс рангов не открылся: ${titles}`);
+  must(form.buttons.length === 3, `кнопок в кейсе рангов: ${form.buttons.length} (${form.buttons.join(" | ")})`);
+  must(form.body.includes("Лестница"), `тела нет: ${form.body.slice(0, 120)}`);
+  must(/шанс: \d/.test(form.body) === false || form.body.includes("не выпадает"), `в лестнице нет ни шансов, ни пометок: ${form.body.slice(0, 240)}`);
+  await settle();
+  const text = chatOf(alice).join(" / ");
+  flush();
+  const after = wallet("p-alice").coins;
+  // все 7 рангов уже выданы → крутка гарантированно дубль: -2400 и +1440
+  must(after === before - 960, `итог крутки по балансу: ${before} → ${after}`);
+  must(/Круток: 1, сгорело 2400/.test(text), `итог крутки не дошёл: ${text.slice(-240)}`);
+  must(wallet("p-alice").rank === "myth", `лучший ранг после крутки: ${wallet("p-alice").rank}`);
+  return `${form.buttons.length} кнопок, ${text.slice(0, 60)}`;
+});
+
+await step("стоп-краны рангов и HUD переключаются из общей формы, а не только из консоли", async () => {
+  await settle();
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Стоп-краны модов"));
+  // порядок control'ов = порядок MOD_TOGGLES: 0 queue, 1 trails, 2 quarry, 3 totems,
+  // 4 protect, 5 ranks, 6 hudBar, 7 hudSidebar
+  answer(fillModal(true, true, true, true, true, false, true, false));
+  await open("sw:admin", admin);
+  await settle();
+  const text = chatOf(admin).join(" / ");
+  must(/ranksEnabled=false/.test(text), `ранги из формы не переключились: ${text.slice(-200)}`);
+  must(/hudSidebarEnabled=false/.test(text), `сайдбар из формы не переключился: ${text.slice(-200)}`);
+  must(!/hudBarEnabled=/.test(text), `тумблер, оставленный как был, попал в список изменений: ${text.slice(-200)}`);
+  const cfg = readJson("sw:eco:cfg") ?? {};
+  must(cfg.ranksEnabled === false, `ranksEnabled в конфиге: ${cfg.ranksEnabled}`);
+  must(cfg.hudBarEnabled === true, `hudBarEnabled не должен был измениться: ${cfg.hudBarEnabled}`);
+  hudP().refreshHudSidebar();
+  hudP().refreshHudBar();
+  must(mc.world.scoreboard.getObjectiveAtDisplaySlot("Sidebar") === undefined, "сайдбар не снят из формы");
+  const aliceLine = (hudP().hudProbe().lastText.find(([id]) => id === "p-alice") ?? [])[1] ?? "";
+  must(aliceLine.length > 5, `персональная строка пострадала зря: ${aliceLine}`);
+  // префикс над головой снимает не форма, а задача meta-ranks: без этих тиков проверка
+  // «кран доехал до ника» была бы самообманом (тег сняли бы руками)
+  const tag = ranksProbe().rankProbe(alice).tag.trim();
+  mc.tickTimes(601);
+  must(tag.length > 0 && !alice.nameTag.includes(tag), `префикс не снят задачей: ${alice.nameTag} (тег ${tag})`);
+  // возвращаем как было — иначе следующий за этим сценарием прогон увидит чужие флаги
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Мета"));
+  answer(pressLabel("Моды мира"));
+  answer(pressLabel("Стоп-краны модов"));
+  answer(fillModal(true, true, true, true, true, true, true, true));
+  await open("sw:admin", admin);
+  await settle();
+  const back = readJson("sw:eco:cfg") ?? {};
+  must(back.ranksEnabled === true && back.hudSidebarEnabled === true, `краны не вернулись: ${JSON.stringify(back).slice(0, 160)}`);
+  hudP().refreshHudSidebar();
+  must(mc.world.scoreboard.getObjectiveAtDisplaySlot("Sidebar") !== undefined, "сайдбар не вернулся после возврата тумблера");
+  mc.tickTimes(601);
+  must(alice.nameTag.includes(tag), `префикс не вернулся задачей: ${alice.nameTag}`);
+  return "2 крана доехали из формы, третий не тронут";
+});
+
+check("ранги ничего не напечатали и не добавили ошибок в диспетчер", () => {
+  const ledger = readJson("sw:eco:ledger") ?? {};
+  must(mintedBeforeRanks > 0, "отправная точка по minted не зафиксирована");
+  must((ledger.minted ?? 0) === mintedBeforeRanks, `эмиссия за сценарий: ${(ledger.minted ?? 0) - mintedBeforeRanks} ₡`);
+  must(mc.state.dispatchErrors.length === 0, `ошибок в диспетчере: ${mc.state.dispatchErrors.length} (${mc.state.dispatchErrors.slice(-2)})`);
+  const report = ranksProbe().rankReport();
+  must(report.length >= 2, `сводка рангов пустая: ${JSON.stringify(report)}`);
+  return `minted ${ledger.minted}, ${report[0]}`;
+});
+
+check("ключи рангов и HUD запрошены из кода (не мёртвые)", () => {
+  const dictText = readFileSync("src/meta/messages.ts", "utf8") + readFileSync("src/ui/messages.ts", "utf8");
+  const keys = [...new Set([...dictText.matchAll(/^\s+"((?:rank|hud)\.[\w.]+)":/gm)].map((row) => row[1]))];
+  must(keys.length >= 30, `ключей найдено ${keys.length} — похоже, словари не дочитались`);
+  // сами словари из «кода» вырезаем: иначе каждая строка словаря «используется» самой собой
+  let blob = readSourceFiles("src");
+  const before = blob.length;
+  blob = blob.replace(readFileSync("src/meta/messages.ts", "utf8"), "").replace(readFileSync("src/ui/messages.ts", "utf8"), "");
+  must(blob.length < before, "словари не вырезаны из поиска — проверка стала бы вакуумной");
+  const dead = keys.filter((key) => !blob.includes(`"${key}"`));
+  must(dead.length === 0, `никто не запрашивает: ${dead.join(", ")}`);
+  return `${keys.length} ключей, все запрошены из кода`;
+});
+
 check("словари модов переведены и не оставляют сырых ключей", () => {
   const i18n = globalThis.__swipecraftProbe.i18n;
-  const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build", "totem.title", "totem.forge", "totem.err.off", "ui.totems", "admin.world.totem.line"];
+  const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build", "totem.title", "totem.forge", "totem.err.off", "ui.totems", "admin.world.totem.line", "ui.ranks", "rank.title", "rank.roll", "hud.rank", "hud.today", "hud.total", "hud.online", "hud.bar.off", "hud.bar.gated", "rank.off", "rank.err.unknown", "rank.dup.refund"];
   const raw = keys.filter((key) => i18n.raw("ru", key) === key || i18n.raw("en", key) === key);
   must(raw.length === 0, `ключей нет в словаре: ${raw.join(", ")}`);
   const stats = i18n.dictionaryStats();

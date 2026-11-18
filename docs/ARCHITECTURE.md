@@ -193,8 +193,9 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  98 проверок: boot/economy/market/cases/clans/progress/
-                                     donations/queue/events/referrals/storage/menu/commands/mods/totems
+        └── run.mjs                  127 проверок: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage/menu/commands/mods/
+                                     тотемы/защита спавна/ранги и таблица статуса
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -318,6 +319,7 @@ deploy: rsync packs → /srv/swipecraft/{behavior_packs,resource_packs} → syst
 | 5 | `src/meta/*`, `src/ui/*`, `tools/stability/*`, `packs/behavior_pack/entities/war_boss.json`, ресурспак босса — **готово** |
 | 7 | `src/world/quarry.ts`, `src/world/spawnbuild.ts`, `src/ui/world.ts`, `src/world/messages.ts`, `sw:quarry`/`sw:spawn:build`, `quarryEnabled`, `docs/WORLD-MODS.md` — **готово** |
 | 8 | `src/world/totems.ts`, экраны тотемов в `src/ui/world.ts`, `sw:totem`, `totemsEnabled`, 52 ключа `totem.*`, `docs/WORLD-MODS.md` §3 — **готово** |
+| 9 | `src/world/spawn.ts` (защита), blueprint в `src/world/spawnbuild.ts`, `src/meta/ranks.ts`, `src/ui/ranks.ts`, `src/ui/hud.ts`, `sw:rank`/`sw:hud`, 4 тумблера (`spawnProtectEnabled`, `ranksEnabled`, `hudBarEnabled`, `hudSidebarEnabled`), `docs/WORLD-MODS.md` §2 и `docs/META.md` §6 — **готово** |
 | 6 | `src/meta/cosmetics.ts`, `src/meta/referrals.ts`, `src/ui/referrals.ts`, цель сбора и споры в `src/meta/donations.ts`, `packs/resource_pack/particles/trail_*.json`, `docs/MONETIZATION.md`, `docs/PROMOTION.md`, `docs/LAUNCH-CHECKLIST.md`, `docs/LEGAL.md` — **готово** |
 
 Отступления этапа 5 от плана — намеренные, каждая причина в doc-файле:

@@ -26,6 +26,9 @@ export interface Profile {
   flags: Partial<Record<DetectorId, number>>;
   rtpReadyAt: number;
   mobile: boolean;
+  /** секунды в мире с полуночи; playDay — индекс суток, к которым они относятся */
+  playToday: number;
+  playDay: number;
 }
 
 export interface AuditEntry {
@@ -98,6 +101,16 @@ export interface PlayerMeta {
   joinedAt: number;
   playSeconds: number;
   banned: boolean;
+  /**
+   * Ранги: rankOwned — всё собранное, rank — законсервированный лучший (его читает
+   * nameTag), rankAt — когда лучший сменился. Лучший выводится из rankOwned, а rank —
+   * только кэш, который ranks.ts чинит на чтении.
+   */
+  rank: string;
+  rankAt: number;
+  rankOwned: string[];
+  /** готовый цветной префикс над головой; владеет им ranks.ts (пусто, если рангов нет) */
+  rankTag: string;
   coins: number;
   lockedCoins: number;
   lockedUntil: number;
@@ -404,6 +417,20 @@ export interface DonationRequest {
 }
 
 export type CosmeticKind = "trail" | "prefix" | "suffix" | "join";
+
+/**
+ * Ранг — чистая косметика: префикс над головой и строка в таблице статуса.
+ * order задаёт лестницу (больше = старше) и порядок в сайдбаре; weight = 0 значит
+ * «из кейса не выпадает» (так помечен стартовый ранг).
+ */
+export interface RankDef {
+  id: string;
+  order: number;
+  label: string;
+  tag: string;
+  rarity: Rarity;
+  weight: number;
+}
 
 export interface CosmeticDef {
   id: string;

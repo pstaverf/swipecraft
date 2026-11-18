@@ -10,6 +10,8 @@ import * as spawnBuildProbe from "../world/spawnbuild";
 import * as totemsProbe from "../world/totems";
 import * as anticheatProbe from "../security/anticheat";
 import * as spawnProbe from "../world/spawn";
+import * as ranksProbe from "../meta/ranks";
+import * as hudProbe from "../ui/hud";
 
 declare const globalThis: { __swipecraftProbe?: Record<string, unknown> };
 
@@ -23,6 +25,8 @@ globalThis.__swipecraftProbe = {
   totems: totemsProbe,
   anticheat: anticheatProbe,
   spawn: spawnProbe,
+  ranks: ranksProbe,
+  hud: hudProbe,
 };
 
 system.beforeEvents.startup.subscribe((event) => {

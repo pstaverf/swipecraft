@@ -1,4 +1,4 @@
-import type { CaseDef, CaseId, ClanRole, CosmeticDef, DonorTier, EcoTunables, Rarity } from "../types/domain";
+import type { CaseDef, CaseId, ClanRole, CosmeticDef, DonorTier, EcoTunables, Rarity, RankDef } from "../types/domain";
 
 export const META_KEYS = {
   tunables: "sw:eco:cfg",
@@ -273,6 +273,34 @@ export const COSMETIC_CASE = {
   label: "Косметический кейс",
   priceCoins: 3500,
   duplicateRefundPercent: 50,
+  maxRollsPerCall: 5,
+} as const;
+
+/**
+ * Лестница рангов. Ранг — чистая косметика: ни на что не влияет, кроме префикса над
+ * головой и строки в таблице статуса. order = место на лестнице (больше = старше),
+ * weight = шанс из кейса; weight: 0 — из кейса не выпадает (стартовый ранг выдаёт админ).
+ */
+export const RANKS: RankDef[] = [
+  { id: "novice", order: 10, label: "Новичок", tag: "§8[новичок]§r ", rarity: "common", weight: 0 },
+  { id: "bronze", order: 20, label: "Бронзовый", tag: "§7[бронза]§r ", rarity: "common", weight: 300 },
+  { id: "steel", order: 30, label: "Стальной", tag: "§f[сталь]§r ", rarity: "common", weight: 210 },
+  { id: "rune", order: 40, label: "Рунный", tag: "§b[руны]§r ", rarity: "rare", weight: 130 },
+  { id: "elite", order: 50, label: "Элитный", tag: "§5[элита]§r ", rarity: "epic", weight: 62 },
+  { id: "legend", order: 60, label: "Легенда", tag: "§6[легенда]§r ", rarity: "legendary", weight: 18 },
+  { id: "myth", order: 70, label: "Мифический", tag: "§d§l[МИФ]§r ", rarity: "legendary", weight: 4 },
+];
+
+/**
+ * Дубликат ранга вернуть нельзя (ранг навсегда), поэтому он компенсируется монетами —
+ * та же схема, что у косметического кейса. Проценты от цены кейса, а не от «стоимости»
+ * ранга: у ранга стоимости нет, есть только цена шанса его вытащить.
+ */
+export const RANK_CASE = {
+  id: "rank",
+  label: "Кейс рангов",
+  priceCoins: 2400,
+  duplicateRefundPercent: 60,
   maxRollsPerCall: 5,
 } as const;
 

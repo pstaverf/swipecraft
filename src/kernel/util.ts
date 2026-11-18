@@ -38,6 +38,16 @@ export const formatClock = (ms: number): string => {
 
 export const shortId = (id: string): string => id.slice(0, 8);
 
+/**
+ * Ключ суток — целое число суток с эпохи. Все «за сегодня» в мире считаются по нему,
+ * поэтому у него один владелец: экономический лимит минт, стрик, сыгранное время и
+ * ранги должны переключаться в одну и ту же секунду. Иначе на границе суток игрок
+ * ловит «сначала зачлось вчерашнему дню, потом сегодняшнему» (или наоборот).
+ */
+export const DAY_MS = 86_400_000;
+
+export const dayIndex = (now: number = Date.now()): number => Math.floor(now / DAY_MS);
+
 export const isMobile = (player: Player): boolean => {
   try {
     return player.clientSystemInfo.platformType === "Mobile";

@@ -38,6 +38,8 @@ import { openClan } from "../ui/clans";
 import { openProgress } from "../ui/progress";
 import { openDonate } from "../ui/donations";
 import { openCosmetics, openReferral } from "../ui/referrals";
+import { hudProbe, hudSidebarRows, hudStatusLines, refreshHudSidebar, setHudBar } from "../ui/hud";
+import { grantRank, rankLines, rankProbe, rankStatus, rollRanks } from "../meta/ranks";
 import { metaAdminLines, metaChangeParam, metaFlush, metaResetConfig, metaStatusLines, metaTxLines } from "../meta/index";
 import { EVENT_IDS, eventName, eventsStatus, isEventId, nextEvent, startEvent, stopEvent } from "../events/manager";
 import { formatDuration } from "../kernel/util";
@@ -165,6 +167,41 @@ export const registerCommands = (event: StartupEvent): void => {
     }
     const summary = totemSummary();
     return [...totemLines(player), `тотемов в реестре: ${summary.rows} (живых ${summary.live}), ${summary.enabled ? "включены" : "стоп-кран"}`]
+      .join("\n")
+      .slice(0, 900);
+  });
+
+  register(event, "sw:hud", "Таблица статуса: on | off | status", CommandPermissionLevel.Any, (player, args) => {
+    const sub = args[0] ?? "status";
+    if (sub === "on" || sub === "off") {
+      const state = setHudBar(player, sub === "on");
+      return `${state.key === "hud.bar.gated" ? "⚠ " : ""}${t(player, state.key, state.params)}`;
+    }
+    if (sub === "rows") return hudSidebarRows().map((row) => `${row.label} — ${row.score}`).join("\n").slice(0, 900);
+    if (sub === "sidebar") {
+      refreshHudSidebar();
+      const probe = hudProbe();
+      return `сайдбар: ${probe.sidebarWrites} перерисовок, битость: ${probe.broken.length > 0 ? probe.broken : "нет"}`;
+    }
+    return [...hudStatusLines(player), t(player, "hud.tip")].join("\n").slice(0, 900);
+  });
+
+  register(event, "sw:rank", "Ранги: info | roll | give <id> (админ)", CommandPermissionLevel.Any, (player, args) => {
+    const sub = args[0] ?? "info";
+    if (sub === "roll") {
+      const count = Number(args[1] ?? "1");
+      const result = rollRanks(player, Number.isFinite(count) ? count : 1);
+      const lines = [t(player, result.key, result.params), ...(result.lines ?? [])];
+      return lines.join("\n").slice(0, 900);
+    }
+    if (sub === "give") {
+      if (!isAdmin(player)) return t(player, "admin.noPermission");
+      const id = args[1] ?? "";
+      const result = grantRank(player, id, { actor: `команда/${player.name}` });
+      return `${result.ok ? "✓" : "✗"} ${t(player, result.key, result.params)}`;
+    }
+    const probe = rankProbe(player);
+    return [...rankStatus(player), ...rankLines(player), `id: ${probe.best || "—"}, tag: ${probe.tag.length > 0 ? probe.tag.trim() : "—"}`]
       .join("\n")
       .slice(0, 900);
   });

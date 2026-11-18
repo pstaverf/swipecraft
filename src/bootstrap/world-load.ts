@@ -14,6 +14,7 @@ import { safeRun } from "../kernel/guard";
 import { Player } from "@minecraft/server";
 import { initSpawnBuild, isSpawnMenuBlock } from "../world/spawnbuild";
 import { openMenu } from "../ui/menu";
+import { forgetHud, registerHudTasks } from "../ui/hud";
 import { initLimits } from "../world/limits";
 import { applyWorldRules } from "../world/rules";
 import { getSeason, initSeason } from "../world/season";
@@ -55,6 +56,7 @@ const boot = (): void => {
   });
 
   registerProfileTasks(registerTask);
+  registerHudTasks(registerTask);
   registerTask("audit-flush", 600, 10, flushAudit);
 
   startTicker();
@@ -75,6 +77,7 @@ world.beforeEvents.playerLeave.subscribe((event) => {
 
 world.afterEvents.playerLeave.subscribe((event) => {
   forgetPlayer(event.playerId);
+  forgetHud(event.playerId);
   resetState(event.playerId);
   flushAudit();
   // карьер всё равно встанет на паузе (копаем только онлайн), но добычу терять нельзя

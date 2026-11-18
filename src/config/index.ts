@@ -124,6 +124,20 @@ export const CONFIG = {
     sampleCells: 24,
     repairAfterMissing: 4,
   },
+  hud: {
+    /** период action bar'а: 40 тиков = 2 с; чаще смысла нет — числа меняются раз в минуту */
+    everyTicks: 40,
+    /** сайдбар — мировой ресурс, его перерисовываем реже */
+    sidebarEveryTicks: 100,
+    /** сколько игроков обслуживается за один проход бара (бюджет тика) */
+    budget: 8,
+    /** строк топа по монетам в сайдбаре */
+    sidebarRows: 5,
+    /** id объектива: чужой объектив ломать нельзя, поэтому у нас свой */
+    sidebarObjective: "sw_hud",
+    /** заголовок ставится один раз при создании объектива: displayName у него readonly */
+    sidebarTitle: "§6Swipecraft",
+  },
   profiles: {
     flushTicks: 20 * 60,
     maxAuditEntries: 250,

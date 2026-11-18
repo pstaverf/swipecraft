@@ -55,7 +55,10 @@ export const equippedValue = (player: Player, kind: CosmeticKind): string => {
 };
 
 export const identityName = (player: Player): string => {
-  const prefix = `${donorPrefix(player)}${equippedValue(player, "prefix")}`;
+  // rankTag принадлежит meta.rankTag, а не этому модулю: его пишет только ranks.ts,
+  // включая снятие по стоп-крану. Здесь только чтение — иначе два владельца nameTag
+  // начали бы перетягивать ник друг у друга.
+  const prefix = `${metaOf(player).rankTag}${donorPrefix(player)}${equippedValue(player, "prefix")}`;
   const suffix = equippedValue(player, "suffix");
   if (prefix.length === 0 && suffix.length === 0) return player.name;
   return `${prefix}${player.name}${suffix}§r`;
