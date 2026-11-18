@@ -6,7 +6,7 @@ import { distance3d, stdDev } from "../../kernel/util";
 import { getProfile } from "../../meta/profiles";
 import type { DetectorId } from "../../types/domain";
 import { adminPlayers, audit } from "../audit";
-import { detectorConfig, getAcConfig, loadAcConfig, resetAcConfig, setAcParam } from "./config";
+import { detectorConfig, getAcConfig, LIMITS_DRIVEN, loadAcConfig, resetAcConfig, setAcParam } from "./config";
 
 interface AcState {
   score: number;
@@ -411,15 +411,22 @@ export const acScores = (): { name: string; score: number; flags: string }[] => 
 
 export const acRuntimeSummary = (): string[] => {
   const config = getAcConfig();
+  const limits = config.limits as unknown as Record<string, number>;
   return [
     `порог=${config.threshold} затухание=${config.decayPerMinute}/мин cooldown=${Math.round(config.alertCooldownMs / 1000)}с`,
-    ...Object.entries(config.detectors).map(
-      ([id, cfg]) => `${id}: ${cfg.enabled ? "on" : "off"} weight=${cfg.weight} hits=${cfg.hits} window=${cfg.windowMs}мс`,
-    ),
+    ...Object.entries(config.detectors).map(([key, cfg]) => {
+      const id = key as DetectorId;
+      const state = cfg.enabled ? "on" : "off";
+      const driven = LIMITS_DRIVEN[id];
+      if (!driven) return `${id}: ${state} weight=${cfg.weight} hits=${cfg.hits} window=${cfg.windowMs}мс`;
+      const limit = limits[driven.hits] ?? "?";
+      const window = driven.windowMs ? ` за ${limits[driven.windowMs] ?? "?"}мс` : "";
+      return `${id}: ${state} weight=${cfg.weight} лимит ${limit}${window} (limits.${driven.hits})`;
+    }),
   ];
 };
 
-export { setAcParam, getAcConfig, resetAcConfig };
+export { setAcParam, getAcConfig, resetAcConfig, LIMITS_DRIVEN };
 
 export const acConfigReset = (): void => {
   resetAcConfig();

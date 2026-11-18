@@ -8,15 +8,15 @@ export const DEFAULT_AC_CONFIG: AcConfig = {
   alertCooldownMs: 300_000,
   decayPerMinute: 2,
   detectors: {
-    reach: { enabled: true, weight: 12, windowMs: 6000, hits: 3, tolerance: 1.2, mobileToleranceBonus: 1.2, graceMs: 1500 },
-    attackRate: { enabled: true, weight: 6, windowMs: 4000, hits: 12, tolerance: 0, mobileToleranceBonus: 0, graceMs: 800 },
-    speed: { enabled: true, weight: 10, windowMs: 5000, hits: 4, tolerance: 1.4, mobileToleranceBonus: 0.6, graceMs: 2500 },
-    fly: { enabled: true, weight: 12, windowMs: 8000, hits: 4, tolerance: 0.4, mobileToleranceBonus: 0.3, graceMs: 3000 },
-    nuke: { enabled: true, weight: 10, windowMs: 3000, hits: 12, tolerance: 0, mobileToleranceBonus: 0, graceMs: 0 },
-    placeRate: { enabled: true, weight: 6, windowMs: 3000, hits: 14, tolerance: 0, mobileToleranceBonus: 0, graceMs: 0 },
-    containerSpam: { enabled: true, weight: 4, windowMs: 5000, hits: 20, tolerance: 0, mobileToleranceBonus: 0, graceMs: 0 },
-    entitySpam: { enabled: true, weight: 4, windowMs: 5000, hits: 25, tolerance: 0, mobileToleranceBonus: 0, graceMs: 0 },
-    stackAnomaly: { enabled: true, weight: 25, windowMs: 1000, hits: 1, tolerance: 0, mobileToleranceBonus: 0, graceMs: 0 },
+    reach: { enabled: true, weight: 12, windowMs: 6000, hits: 3, tolerance: 1.2, mobileToleranceBonus: 1.2 },
+    attackRate: { enabled: true, weight: 6, windowMs: 4000, hits: 12, tolerance: 0, mobileToleranceBonus: 0 },
+    speed: { enabled: true, weight: 10, windowMs: 5000, hits: 4, tolerance: 1.4, mobileToleranceBonus: 0.6 },
+    fly: { enabled: true, weight: 12, windowMs: 8000, hits: 4, tolerance: 0.4, mobileToleranceBonus: 0.3 },
+    nuke: { enabled: true, weight: 10, windowMs: 3000, hits: 12, tolerance: 0, mobileToleranceBonus: 0 },
+    placeRate: { enabled: true, weight: 6, windowMs: 3000, hits: 14, tolerance: 0, mobileToleranceBonus: 0 },
+    containerSpam: { enabled: true, weight: 4, windowMs: 5000, hits: 20, tolerance: 0, mobileToleranceBonus: 0 },
+    entitySpam: { enabled: true, weight: 4, windowMs: 5000, hits: 25, tolerance: 0, mobileToleranceBonus: 0 },
+    stackAnomaly: { enabled: true, weight: 25, windowMs: 1000, hits: 1, tolerance: 0, mobileToleranceBonus: 0 },
   },
   limits: {
     maxStackAmount: 64,
@@ -48,6 +48,29 @@ export const DETECTOR_IDS: DetectorId[] = [
   "stackAnomaly",
 ];
 
+/**
+ * Детекторы, порог которых живёт в `limits.*`, а не в полях детектора. `hits`/`windowMs`
+ * у них — только описание в summary: менять их через `detectors.<id>.hits` бессмысленно,
+ * и `setAcParam` на такой попытке отвечает отказом вместо «обновлён», чтобы админ не
+ * прикладывал значение, которое ни на что не влияет.
+ */
+export const LIMITS_DRIVEN: Partial<Record<DetectorId, { hits: keyof AcConfig["limits"]; windowMs: keyof AcConfig["limits"] | null }>> = {
+  nuke: { hits: "breakRatePerWindow", windowMs: "breakWindowMs" },
+  placeRate: { hits: "placeRatePerWindow", windowMs: "placeWindowMs" },
+  containerSpam: { hits: "containerOpsPerWindow", windowMs: "containerWindowMs" },
+  entitySpam: { hits: "entityOpsPerWindow", windowMs: "entityWindowMs" },
+  stackAnomaly: { hits: "maxStackAmount", windowMs: null },
+};
+
+const DETECTOR_FIELDS: (keyof DetectorConfig)[] = [
+  "enabled",
+  "weight",
+  "windowMs",
+  "hits",
+  "tolerance",
+  "mobileToleranceBonus",
+];
+
 let config: AcConfig = clone(DEFAULT_AC_CONFIG);
 
 function clone<T>(value: T): T {
@@ -63,7 +86,15 @@ const mergeConfig = (base: AcConfig, stored: Partial<AcConfig>): AcConfig => {
   if (stored.detectors) {
     for (const id of DETECTOR_IDS) {
       const incoming = stored.detectors[id];
-      if (incoming) merged.detectors[id] = { ...merged.detectors[id], ...incoming };
+      if (!incoming) continue;
+      // берём только известные поля: ключи от более старых версий (например удалённый
+      // graceMs) не должны возвращаться в память и переписываться на диск вечно
+      const next = { ...merged.detectors[id] } as Record<string, unknown>;
+      for (const field of DETECTOR_FIELDS) {
+        if (incoming[field] === undefined) continue;
+        next[field] = incoming[field];
+      }
+      merged.detectors[id] = next as unknown as DetectorConfig;
     }
   }
   return merged;
@@ -127,6 +158,11 @@ export const setAcParam = (path: string, rawValue: string): { ok: boolean; messa
     const field = parts[2] as keyof DetectorConfig;
     const target = config.detectors[id] as unknown as Record<string, unknown>;
     if (!(field in target)) return { ok: false, message: `неизвестное поле ${parts[2]}` };
+    const driven = LIMITS_DRIVEN[id];
+    if (driven && field !== "enabled" && field !== "weight") {
+      const key = field === "windowMs" && driven.windowMs ? driven.windowMs : driven.hits;
+      return { ok: false, message: `${id}.${field} ни на что не влияет: порог берётся из limits.${key}` };
+    }
     if (field === "enabled") {
       if (typeof value !== "boolean") return { ok: false, message: "enabled принимает true/false" };
       config.detectors[id].enabled = value;

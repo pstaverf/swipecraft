@@ -69,7 +69,14 @@ const register = (
         if (typeof result === "string") {
           return { status: CustomCommandStatus.Success, message: result.slice(0, 900) };
         }
-        void result.catch((error: unknown) => log.error(`command:${name}`, String(error)));
+        // CustomCommandResult нельзя вернуть промисом ( typings: callback возвращает
+        // CustomCommandResult | undefined синхронно), поэтому текст асинхронного обработчика
+        // уходит в чат: иначе «Недостаточно прав» от /sw:admin до игрока не доезжал.
+        void result
+          .then((message: string) => {
+            if (message.length > 0) player.sendMessage(message.slice(0, 900));
+          })
+          .catch((error: unknown) => log.error(`command:${name}`, String(error)));
         return { status: CustomCommandStatus.Success, message: "" };
       } catch (error) {
         log.error(`command:${name}`, String(error));

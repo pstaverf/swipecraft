@@ -188,8 +188,8 @@ swipecraft/
         ├── mock-server.mjs          мир, игроки, сущности, контейнеры, партиклы, time-patch, фейки событий
         ├── mock-ui.mjs              ActionForm/ModalForm с ответами по подписям (UI_TRACE=1)
         ├── build.mjs                esbuild бандла с external-шимами на моки
-        └── run.mjs                  61 проверка: boot/economy/market/cases/clans/progress/
-                                     donations/queue/events/referrals/storage/menu + ru/en
+        └── run.mjs                  66 проверок: boot/economy/market/cases/clans/progress/
+                                     donations/queue/events/referrals/storage/menu/commands
 ```
 
 ### 3.1 Жёсткие ограничения API 2.11.0, обнаруженные при сверке с `.d.ts`
@@ -201,6 +201,7 @@ swipecraft/
 | Событие «до установки блока» | нельзя отменить постановку блока | `afterEvents.playerPlaceBlock` + возврат блока в инвентарь |
 | Пинг игрока | нельзя учитывать реальный ping | окна допуска, отбрасывание лаг-спайков, бонус допуска для `Mobile` |
 | Файлы, HTTP, БД | состояние только в dynamic properties мира | вайп/сид выполняет shell-скрипт, не скрипт |
+| `CustomCommandResult` нельзя вернуть промисом (`callback` в `.d.ts` возвращает `CustomCommandResult \| undefined` синхронно) | текст из `async`-обработчика команды терялся: «Недостаточно прав» у `/sw:admin` не видел никто | `register` дописывает `.then(message → player.sendMessage)` и `.catch(log.error)`; проверено стабом (без этого шага отказ пропадает) |
 
 ## 5. Runtime-архитектура
 
@@ -238,7 +239,8 @@ swipecraft/
 пишет `log.warn("i18n", ...)` один раз на ключ и возвращает сам ключ. Стаб-харнесс
 превращает это в падение двумя проверками — «ни один ключ не уехал в текст без перевода»
 (`missingKeyCount()`) и «за весь прогон нет неожиданных log.error / log.warn», а
-синхронность словарей проверяется по `dictionaryStats()` (527 ключей в обе стороны).
+синхронность словарей проверяется по `dictionaryStats()` (актуальное число ключей печатает
+вывод стаба, чтобы цифры в доках не уезжали).
 
 ### 5.5 Отказоустойчивость
 

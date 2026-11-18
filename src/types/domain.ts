@@ -59,7 +59,6 @@ export interface DetectorConfig {
   hits: number;
   tolerance: number;
   mobileToleranceBonus: number;
-  graceMs: number;
 }
 
 export interface AcConfig {

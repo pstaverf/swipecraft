@@ -7,15 +7,17 @@ import { log } from "../kernel/logger";
 import { tickerReport } from "../kernel/ticker";
 import { clearBan, getProfile, setBanned } from "../meta/profiles";
 import { changeAcParam, acRuntimeSummary, acScores, getAcConfig, resetAcConfig } from "../security/anticheat";
+import { DETECTOR_IDS } from "../security/anticheat/config";
 import { audit, auditReport, recentAudit } from "../security/audit";
 import { borderInfo, borderRadius } from "../world/border";
 import { armWipe, disarmWipe, getSeason, seasonStatus } from "../world/season";
+import { labelIndex } from "./common";
 import { isAdmin, openMenu } from "./menu";
 import { openMetaAdmin } from "./admin-meta";
 import "./messages";
 import { EVENT_IDS, eventName, eventsStatus, startEvent, stopEvent } from "../events/manager";
 
-const DETECTORS = ["reach", "attackRate", "speed", "fly", "nuke", "placeRate", "containerSpam", "entitySpam", "stackAnomaly"];
+const DETECTORS = DETECTOR_IDS;
 
 const kickPlayer = (player: Player, reason: string): void => {
   try {
@@ -178,30 +180,42 @@ const openConfig = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:admin:config", async () => {
     const form = new ModalFormData()
       .title(t(player, "admin.config"))
-      .slider("Порог тревоги", 10, 200, { defaultValue: config.threshold, valueStep: 5 })
-      .slider("Затухание в минуту", 0, 20, { defaultValue: config.decayPerMinute, valueStep: 1 })
-      .slider("Cooldown тревоги, сек", 30, 1800, { defaultValue: Math.round(config.alertCooldownMs / 1000), valueStep: 30 })
-      .dropdown("Детектор для правки", DETECTORS, { defaultValueIndex: 0 })
-      .slider("Вес детектора", 1, 50, { defaultValue: 12, valueStep: 1 })
-      .slider("Порог hits", 1, 40, { defaultValue: 3, valueStep: 1 })
-      .slider("Tolerance x10", 0, 40, { defaultValue: 12, valueStep: 1 })
-      .toggle("Детектор включён", { defaultValue: true })
+      .slider(t(player, "admin.ac.threshold"), 10, 200, { defaultValue: config.threshold, valueStep: 5 })
+      .slider(t(player, "admin.ac.decay"), 0, 20, { defaultValue: config.decayPerMinute, valueStep: 1 })
+      .slider(t(player, "admin.ac.cooldown"), 30, 1800, { defaultValue: Math.round(config.alertCooldownMs / 1000), valueStep: 30 })
+      .dropdown(t(player, "admin.ac.detector"), [...DETECTORS], { defaultValueIndex: 0 })
+      .slider(t(player, "admin.ac.weight"), 1, 50, { defaultValue: 12, valueStep: 1 })
+      .slider(t(player, "admin.ac.hits"), 1, 40, { defaultValue: 3, valueStep: 1 })
+      .slider(t(player, "admin.ac.tolerance"), 0, 40, { defaultValue: 12, valueStep: 1 })
+      .toggle(t(player, "admin.ac.enabled"), { defaultValue: true })
       .submitButton(t(player, "admin.done"));
 
     const response = await form.show(player);
     if (response.canceled || !response.formValues) return;
 
     const values = response.formValues;
-    changeAcParam("threshold", String(values[0]));
-    changeAcParam("decayPerMinute", String(values[1]));
-    changeAcParam("alertCooldownMs", String(Number(values[2]) * 1000));
-    const detector = DETECTORS[Number(values[3])] ?? DETECTORS[0];
-    changeAcParam(`detectors.${detector}.weight`, String(values[4]));
-    changeAcParam(`detectors.${detector}.hits`, String(values[5]));
-    changeAcParam(`detectors.${detector}.tolerance`, String(Number(values[6]) / 10));
-    changeAcParam(`detectors.${detector}.enabled`, values[7] ? "true" : "false");
-
-    player.sendMessage(t(player, "admin.saved"));
+    const applied = [
+      changeAcParam("threshold", String(values[0])),
+      changeAcParam("decayPerMinute", String(values[1])),
+      changeAcParam("alertCooldownMs", String(Number(values[2]) * 1000)),
+    ];
+    const detector = DETECTORS[labelIndex(DETECTORS, values[3])];
+    if (detector !== undefined) {
+      applied.push(
+        changeAcParam(`detectors.${detector}.weight`, String(values[4])),
+        changeAcParam(`detectors.${detector}.hits`, String(values[5])),
+        changeAcParam(`detectors.${detector}.tolerance`, String(Number(values[6]) / 10)),
+        changeAcParam(`detectors.${detector}.enabled`, values[7] ? "true" : "false"),
+      );
+    }
+    // часть полей у limits-детекторов применить нельзя — молчать об этом значит врать
+    // админу «сохранено», поэтому отказы собираются в одно сообщение
+    const failed = applied.filter((row) => !row.ok);
+    player.sendMessage(
+      failed.length === 0
+        ? t(player, "admin.saved")
+        : t(player, "admin.ac.partial", { count: failed.length, detail: failed.map((row) => row.message).join("; ").slice(0, 240) }),
+    );
     player.sendMessage(acRuntimeSummary().slice(0, 4).join("\n"));
   });
 };

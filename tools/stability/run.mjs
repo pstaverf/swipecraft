@@ -77,6 +77,8 @@ const run = (name, player, ...args) => {
   return entry.handler({ sourceType: "Entity", sourceEntity: player }, ...args);
 };
 
+const reply = (name, player, ...args) => String(run(name, player, ...args)?.message ?? "");
+
 const open = async (name, player, ...args) => {
   const value = run(name, player, ...args);
   if (value && typeof value.then === "function") await value;
@@ -1264,6 +1266,145 @@ await step("админ-панель видна только админу и от
   const opened = shownTitles().join(" > ");
   must(/action:Админ-панель/.test(opened), `переход в админку не сработал: ${opened}`);
   return `${form.buttons.length} кнопок у админа`;
+});
+
+scenario("commands");
+
+await step("админ-команды не слушаются без тега admin", async () => {
+  flush();
+  const metaBefore = JSON.stringify(readJson("sw:eco:cfg") ?? {});
+  const acBefore = JSON.stringify(readJson("sw:ac:cfg") ?? {});
+  const attempts = [
+    ["sw:admin", []],
+    ["sw:meta", ["set", "mintCapPerDay", "1"]],
+    ["sw:ac", ["set", "threshold", "1"]],
+    ["sw:event", ["stop"]],
+  ];
+  for (const [name, args] of attempts) {
+    clearChat(alice);
+    const result = await open(name, alice, ...args);
+    const text = `${String(result?.message ?? "")} / ${chatOf(alice).join(" / ")}`;
+    must(text.includes("Недостаточно прав"), `${name} от alice ответил не про права: ${text.slice(0, 90)}`);
+  }
+  flush();
+  must(JSON.stringify(readJson("sw:eco:cfg") ?? {}) === metaBefore, "alice изменила тюнинги экономики");
+  must(JSON.stringify(readJson("sw:ac:cfg") ?? {}) === acBefore, "alice изменила конфиг античита");
+  const asAdmin = reply("sw:meta", admin, "set", "mintCapPerDay", "9000");
+  must(!asAdmin.includes("Недостаточно прав"), `админу тоже отказано: ${asAdmin.slice(0, 80)}`);
+  return `${attempts.length} команд отказано, состояние не тронуто`;
+});
+
+await step("/sw:rtp телепортует в безопасную точку и ставит кулдаун", async () => {
+  const trav = mc.makePlayer("p-trav", "Trav", { x: 2, y: 71, z: 2 });
+  const groundBefore = mc.state.groundY;
+  // мок рисует плоский рельеф: поверхность должна попадать на сетку шага 4 (200..40),
+  // иначе isSafeSpot не находит ни одну точку и успех RTP нечем проверить
+  mc.state.groundY = 72;
+  try {
+    ui.shown.length = 0;
+    ui.answers.length = 0;
+    clearChat(trav);
+    const first = reply("sw:rtp", trav);
+    must(first.includes("Телепорт выполнен"), `первый RTP не сработал: ${first.slice(0, 140)}`);
+    const { x, z } = trav.location;
+    const distance = Math.hypot(x, z);
+    must(distance >= 120, `улетел слишком близко к спавну: ${Math.round(distance)}`);
+    must(trav.location.y === 73, `приземлился не над поверхностью: y=${trav.location.y}`);
+    must(mc.state.actionBars.some((row) => row.to === "Trav"), "не было action-bar «ищу место»");
+    const second = reply("sw:rtp", trav);
+    must(second.includes("будет доступен через"), `кулдаун не сработал: ${second.slice(0, 120)}`);
+    mc.advance(91_000);
+    const third = reply("sw:rtp", trav);
+    must(third.includes("Телепорт выполнен"), `после кулдауна RTP не вернулся: ${third.slice(0, 120)}`);
+    return `радиус ${Math.round(distance)}, y ${trav.location.y}, кулдаун 90с`;
+  } finally {
+    mc.state.groundY = groundBefore;
+    mc.removePlayer(trav);
+  }
+});
+
+await step("/sw:ac show, set и reset работают на живом конфиге", async () => {
+  const show = () => reply("sw:ac", admin, "show");
+  must(show().includes("порог=60"), `summary не похож на правду: ${show().slice(0, 120)}`);
+  const detectorLines = show().split("\n").filter((line) => line.includes("weight="));
+  must(detectorLines.length === 9, `детекторов в summary ${detectorLines.length}, ожидалось 9`);
+  must(reply("sw:ac", admin, "set", "detectors.reach.weight", "15").includes("обновлён"), "set веса не прошёл");
+  must(/reach: on weight=15/.test(show()), `show не показал новое значение: ${show().split("\n")[1]}`);
+  flush();
+  must(readJson("sw:ac:cfg")?.detectors?.reach?.weight === 15, "значение не доехало до dynamic properties");
+  must(reply("sw:ac", admin, "set", "detectors.reach.enabled", "false").includes("обновлён"), "выключить детектор не удалось");
+  must(/reach: off weight=15/.test(show()), `детектор не выключился: ${show().split("\n")[1]}`);
+  must(reply("sw:ac", admin, "set", "detectors.reach.weight", "abc").includes("не число"), "мусорное значение принято");
+  must(reply("sw:ac", admin, "set", "detectors.nope.weight", "5").includes("неизвестный детектор"), "несуществующий детектор принят");
+  must(reply("sw:ac", admin, "set", "limits.maxStackAmount", "32").includes("maxStackAmount=32"), "лимит не меняется");
+  must(readJson("sw:ac:cfg")?.limits?.maxStackAmount === 32, "лимит не записан");
+  must(reply("sw:ac", admin, "wat").includes("подкоманды"), "нет подсказки по подкомандам");
+  must(reply("sw:ac", admin, "reset").includes("сброшен"), "reset не ответил");
+  must(/reach: on weight=12/.test(show()), `после reset вес не вернулся: ${show().split("\n")[1]}`);
+  must(readJson("sw:ac:cfg")?.limits?.maxStackAmount === 64, "после reset лимит не вернулся в дефолт");
+  // limits-driven детекторы: show обязан врать меньше, а set — отказывать бесполезных полей
+  const nukeLine = show().split("\n").find((line) => line.startsWith("nuke:"));
+  must(/лимит 20 за 4000мс \(limits.breakRatePerWindow\)/.test(nukeLine ?? ""), `nuke показывает не тот порог: ${nukeLine}`);
+  must(!/nuke:.*hits=/.test(nukeLine ?? ""), `nuke всё ещё печатает бесполезные hits: ${nukeLine}`);
+  const rejected = reply("sw:ac", admin, "set", "detectors.nuke.hits", "4");
+  must(rejected.includes("ни на что не влияет") && rejected.includes("limits.breakRatePerWindow"), `бесполезный set прошёл: ${rejected}`);
+  must(readJson("sw:ac:cfg") === undefined || (readJson("sw:ac:cfg")?.detectors?.nuke?.hits ?? 12) === 12, "отклонённое значение всё равно записано");
+  must(/fly: on weight=12 hits=4 window=8000мс/.test(show()), "у обычных детекторов строка сломана");
+  flush();
+  must(!JSON.stringify(readJson("sw:ac:cfg") ?? {}).includes("graceMs"), "в конфиг снова записано мёртвое поле graceMs");
+  return "9 детекторов, set/reset/валидация, честный show";
+});
+
+await step("/sw:event status, list и подсказки отвечают админу", async () => {
+  const ids = ["airdrop", "bloodmoon", "koth", "bossraid", "doubleloot", "bountyhunt", "lifesteal"];
+  const list = reply("sw:event", admin, "list");
+  const missing = ids.filter((id) => !list.includes(id));
+  must(missing.length === 0, `в list нет: ${missing.join(", ")} — ${list.slice(0, 160)}`);
+  must(list.split("\n").length === ids.length, `в list ${list.split("\n").length} строк вместо ${ids.length}`);
+  const status = reply("sw:event", admin, "status");
+  must(status.includes("Следующий:") && status.includes("Игроков онлайн:"), `status неполный: ${status.slice(0, 160)}`);
+  const next = reply("sw:event", admin, "next");
+  must(/Следующий: .+ через /.test(next), `next сломан: ${next.slice(0, 120)}`);
+  must(reply("sw:event", admin, "start", "nope").includes("укажи id"), "старт с неверным id не отвергнут");
+  must(reply("sw:event", admin, "wat").includes("подкоманды"), "нет подсказки по подкомандам");
+  return `${ids.length} ивентов в списке`;
+});
+
+await step("форма «Настройки античита» переведена и не врёт про применение", async () => {
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Настройки античита"));
+  await open("sw:admin", admin);
+  const form = lastForm();
+  must(form.title.includes("Настройки античита"), `форма не открылась: ${shownTitles().join(" > ")}`);
+  const labels = form.controls.map((row) => row.label);
+  must(labels.includes("Порог тревоги") && labels.includes("Детектор для правки") && labels.includes("Детектор включён"), `подписи не из словаря: ${labels.join(" | ")}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Настройки античита"));
+  answer(fillModal("10", "2", "300", "nuke", "10", "5", "12", true));
+  await open("sw:admin", admin);
+  const text = chatOf(admin).join(" / ");
+  must(/Не применено \(2\)/.test(text), `форма не сообщила об отказе: ${text.slice(-220)}`);
+  must(text.includes("limits.breakRatePerWindow"), `нет подсказки, где настоящий лимит: ${text.slice(-220)}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  clearChat(admin);
+  answer(pressLabel("Язык / Language"));
+  await open("sw:menu", admin);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Anticheat settings"));
+  await open("sw:admin", admin);
+  const enLabels = lastForm().controls.map((row) => row.label);
+  must(enLabels.includes("Alert threshold") && enLabels.includes("Detector to edit"), `форма не переведена: ${enLabels.join(" | ")}`);
+  ui.shown.length = 0;
+  ui.answers.length = 0;
+  answer(pressLabel("Language / Язык"));
+  await open("sw:menu", admin);
+  return `${form.controls.length} полей, 2 отказа показано`;
 });
 
 check("ни один ключ не уехал в текст без перевода", () => {
