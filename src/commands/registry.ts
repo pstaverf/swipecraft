@@ -26,6 +26,7 @@ import {
   teleportToQuarry,
 } from "../world/quarry";
 import { checkSpawnIntegrity, spawnBlueprint, spawnPreviewLines, spawnStatus, spawnStatusLines, startSpawnBuild, setSpawnPoint } from "../world/spawnbuild";
+import { sendPaged } from "../ui/common";
 import { openAdminPanel } from "../ui/admin";
 import { openQuarry, openTotems } from "../ui/world";
 import { TOTEM_TIER_IDS, forgeTotem, revokeTotem, totemHowLines, totemLines, totemRows, totemSummary } from "../world/totems";
@@ -49,6 +50,23 @@ type Handler = (player: Player, args: string[]) => Promise<string> | string;
 const originPlayer = (origin: CustomCommandOrigin): Player | undefined => {
   const entity = origin.sourceEntity;
   return entity instanceof Player ? entity : undefined;
+};
+
+/**
+ * Ограничение ответа команды. Двигатель режет длинное сообщение сам и делает это посреди
+ * строки, поэтому обрезанный отчёт выглядел как баг данных. Здесь обрыв идёт по границе
+ * строки и с явной пометкой — сколько строк не влезло.
+ */
+const COMMAND_LIMIT = 900;
+
+const clip = (message: string): string => {
+  const text = String(message ?? "");
+  if (text.length <= COMMAND_LIMIT) return text;
+  const head = text.slice(0, COMMAND_LIMIT - 40);
+  const cut = head.lastIndexOf("\n");
+  const kept = cut > 0 ? head.slice(0, cut) : head;
+  const dropped = text.slice(kept.length + 1).split("\n").filter((line) => line.length > 0).length;
+  return `${kept}\n… ещё ${dropped} стр. — полный отчёт в форме`;
 };
 
 const toArgs = (rest: unknown[]): string[] =>
@@ -86,14 +104,16 @@ const register = (
       try {
         const result = handler(player, args);
         if (typeof result === "string") {
-          return { status: CustomCommandStatus.Success, message: result.slice(0, 900) };
+          return { status: CustomCommandStatus.Success, message: clip(result) };
         }
         // CustomCommandResult нельзя вернуть промисом (typings: callback возвращает
         // CustomCommandResult | undefined синхронно), поэтому текст асинхронного обработчика
         // уходит в чат: иначе «Недостаточно прав» от /sw:admin до игрока не доезжал.
         void result
           .then((message: string) => {
-            if (message.length > 0) player.sendMessage(message.slice(0, 900));
+            // асинхронный ответ уходит в чат, значит страницами: отчёт на 40 строк
+            // (транзакции, кошельки, заявки) в одно сообщение не влезает
+            if (message.length > 0) sendPaged(player, message.split("\n"));
           })
           .catch((error: unknown) => log.error(`command:${name}`, String(error)));
         return { status: CustomCommandStatus.Success, message: "" };
@@ -131,7 +151,7 @@ export const registerCommands = (event: StartupEvent): void => {
     if (sub === "go") return say(teleportToQuarry(player));
     if (sub === "list" || sub === "release") {
       if (!isAdmin(player)) return t(player, "admin.noPermission");
-      if (sub === "list") return (quarryAdminLines().join("\n") || t(player, "admin.quarry.none")).slice(0, 900);
+      if (sub === "list") return quarryAdminLines().join("\n") || t(player, "admin.quarry.none");
       const id = args[1];
       if (!id) return `${t(player, "quarry.err.id", { id: "—" })}\n${listQuarries().map((claim) => claim.id).join(", ")}`;
       return say(releaseQuarry(player.name, id));
@@ -140,8 +160,7 @@ export const registerCommands = (event: StartupEvent): void => {
     const check = canPlaceQuarry(player);
     const summary = quarrySummary();
     return [...lines, check.ok ? t(player, "quarry.ready", check.params) : `✗ ${t(player, check.key, check.params)}`, `карьеров на сервере: ${summary.claims}/${CONFIG.quarry.maxClaims}, ${summary.enabled ? "копают" : "стоп-кран"}`]
-      .join("\n")
-      .slice(0, 900);
+      .join("\n");
   });
 
   register(event, "sw:totem", "Зачарованные тотемы: ui | status | forge <tier> | info | revoke <серия>", CommandPermissionLevel.Any, (player, args) => {
@@ -158,7 +177,7 @@ export const registerCommands = (event: StartupEvent): void => {
       if (!TOTEM_TIER_IDS.includes(tier)) return `✗ ${t(player, "totem.err.tier")} (${TOTEM_TIER_IDS.join(" | ")})`;
       return say(forgeTotem(player, tier));
     }
-    if (sub === "info") return totemHowLines(player).join("\n").slice(0, 900);
+    if (sub === "info") return totemHowLines(player).join("\n");
     if (sub === "revoke") {
       if (!isAdmin(player)) return t(player, "admin.noPermission");
       const serial = args[1];
@@ -167,8 +186,7 @@ export const registerCommands = (event: StartupEvent): void => {
     }
     const summary = totemSummary();
     return [...totemLines(player), `тотемов в реестре: ${summary.rows} (живых ${summary.live}), ${summary.enabled ? "включены" : "стоп-кран"}`]
-      .join("\n")
-      .slice(0, 900);
+      .join("\n");
   });
 
   register(event, "sw:hud", "Таблица статуса: on | off | status", CommandPermissionLevel.Any, (player, args) => {
@@ -177,13 +195,13 @@ export const registerCommands = (event: StartupEvent): void => {
       const state = setHudBar(player, sub === "on");
       return `${state.key === "hud.bar.gated" ? "⚠ " : ""}${t(player, state.key, state.params)}`;
     }
-    if (sub === "rows") return hudSidebarRows().map((row) => `${row.label} — ${row.score}`).join("\n").slice(0, 900);
+    if (sub === "rows") return hudSidebarRows().map((row) => `${row.label} — ${row.score}`).join("\n");
     if (sub === "sidebar") {
       refreshHudSidebar();
       const probe = hudProbe();
       return `сайдбар: ${probe.sidebarWrites} перерисовок, битость: ${probe.broken.length > 0 ? probe.broken : "нет"}`;
     }
-    return [...hudStatusLines(player), t(player, "hud.tip")].join("\n").slice(0, 900);
+    return [...hudStatusLines(player), t(player, "hud.tip")].join("\n");
   });
 
   register(event, "sw:rank", "Ранги: info | roll | give <id> (админ)", CommandPermissionLevel.Any, (player, args) => {
@@ -192,7 +210,7 @@ export const registerCommands = (event: StartupEvent): void => {
       const count = Number(args[1] ?? "1");
       const result = rollRanks(player, Number.isFinite(count) ? count : 1);
       const lines = [t(player, result.key, result.params), ...(result.lines ?? [])];
-      return lines.join("\n").slice(0, 900);
+      return lines.join("\n");
     }
     if (sub === "give") {
       if (!isAdmin(player)) return t(player, "admin.noPermission");
@@ -202,27 +220,26 @@ export const registerCommands = (event: StartupEvent): void => {
     }
     const probe = rankProbe(player);
     return [...rankStatus(player), ...rankLines(player), `id: ${probe.best || "—"}, tag: ${probe.tag.length > 0 ? probe.tag.trim() : "—"}`]
-      .join("\n")
-      .slice(0, 900);
+      .join("\n");
   });
 
   register(event, "sw:spawn", "Спавн: status | preview | build | repair | check | point", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "status";
-    if (sub === "preview") return spawnPreviewLines().join("\n").slice(0, 900);
+    if (sub === "preview") return spawnPreviewLines().join("\n");
     if (sub === "build" || sub === "repair") {
-      const value = startSpawnBuild(player.name, sub === "build" ? "build" : "repair");
+      const value = startSpawnBuild(player.name, sub === "build" ? "build" : "repair", { sweep: sub !== "build" });
       return `${value.ok ? "✓" : "✗"} ${t(player, value.key, value.params)}`;
     }
     if (sub === "check") {
       const check = checkSpawnIntegrity(true);
-      return [...spawnStatusLines(player), `проверено ячеек: ${check.checked}, расхождений: ${check.missing}`].join("\n").slice(0, 900);
+      return [...spawnStatusLines(player), `проверено ячеек: ${check.checked}, расхождений: ${check.missing}`].join("\n");
     }
     if (sub === "point") {
       setSpawnPoint();
       return t(player, "spawn.point.set", { x: CONFIG.lobby.x, y: CONFIG.lobby.y, z: CONFIG.lobby.z });
     }
-    return [...spawnStatusLines(player), `ячеек в blueprint: ${spawnBlueprint().length}, за проход ≤ ${CONFIG.spawn.blocksPerRun}`, t(player, "spawn.altar")].join("\n").slice(0, 900);
+    return [...spawnStatusLines(player), `ячеек в blueprint: ${spawnBlueprint().length}, за проход ≤ ${CONFIG.spawn.blocksPerRun}`, t(player, "spawn.altar")].join("\n");
   });
 
   register(event, "sw:admin", "Админ-панель", CommandPermissionLevel.GameDirectors, async (player) => {
@@ -274,14 +291,14 @@ export const registerCommands = (event: StartupEvent): void => {
   register(event, "sw:meta", "Мета-слой: status | flush | tx | set <параметр> <число> | reset", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "status";
-    if (sub === "status") return metaStatusLines().join("\n").slice(0, 900);
+    if (sub === "status") return metaStatusLines().join("\n");
     if (sub === "flush") {
       metaFlush();
       audit(player.name, "meta-flush", "meta", "принудительное сохранение");
       return "сохранено";
     }
-    if (sub === "tx") return metaTxLines(12).join("\n").slice(0, 900);
-    if (sub === "info") return metaAdminLines().join("\n").slice(0, 900);
+    if (sub === "tx") return metaTxLines(12).join("\n");
+    if (sub === "info") return metaAdminLines().join("\n");
     if (sub === "reset") {
       audit(player.name, "meta-reset", "eco", "сброс конфига экономики");
       return metaResetConfig();
@@ -299,7 +316,7 @@ export const registerCommands = (event: StartupEvent): void => {
   register(event, "sw:ac", "Античит: show | set <путь> <значение> | reset", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "show";
-    if (sub === "show") return acRuntimeSummary().join("\n").slice(0, 900);
+    if (sub === "show") return acRuntimeSummary().join("\n");
     if (sub === "reset") {
       resetAcConfig();
       audit(player.name, "ac-reset", "config", "сброс к дефолту");
@@ -317,7 +334,7 @@ export const registerCommands = (event: StartupEvent): void => {
   register(event, "sw:event", "Ивенты: status | next | list | start <id> | stop", CommandPermissionLevel.GameDirectors, (player, args) => {
     if (!isAdmin(player)) return t(player, "admin.noPermission");
     const sub = args[0] ?? "status";
-    if (sub === "status") return eventsStatus().join("\n").slice(0, 900);
+    if (sub === "status") return eventsStatus().join("\n");
     if (sub === "next") {
       const next = nextEvent();
       return `Следующий: ${eventName(next.id)} через ${formatDuration(next.at - Date.now())}`;

@@ -4,7 +4,7 @@ import { safeRunAsync } from "../kernel/guard";
 import { t } from "../kernel/i18n";
 import { CURRENCY, CLANS } from "../meta/config";
 import type { ClanRole } from "../types/domain";
-import { busyNote, labelIndex, numOf, report } from "./common";
+import { sendPaged, busyNote, labelIndex, numOf, report } from "./common";
 import {
   acceptWar,
   clanLeaderboard,
@@ -323,7 +323,7 @@ export const openClan = async (player: Player): Promise<void> => {
         return;
       }
       if (action === "leader") {
-        player.sendMessage(clanLeaderboard(player, 10).join("\n"));
+        sendPaged(player, clanLeaderboard(player, 10));
         return;
       }
       await openMenu(player);
@@ -372,7 +372,7 @@ export const openClan = async (player: Player): Promise<void> => {
         await openWars(player);
         return;
       case "leader":
-        player.sendMessage(clanLeaderboard(player, 10).join("\n"));
+        sendPaged(player, clanLeaderboard(player, 10));
         return;
       case "leave":
         report(player, leaveClan(player));

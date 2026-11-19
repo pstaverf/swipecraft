@@ -163,6 +163,13 @@ export const addDict = (lang: Lang, dict: Dict): void => {
  * сервере это не спам), а headless-стаб падает на «нет неожиданных log.warn» — то есть
  * расхождение ru/en или ключ, записанный только в один словарь, ловится до деплоя.
  */
+/**
+ * Тот же принцип, что и с пропущенным ключом: вызов, передающий не те имена параметров,
+ * раньше показывал игроку «прокруток косметики: {rolls}» — и это было молча. Теперь
+ * warning пишется один раз на ключ, и headless-стаб на нём падает.
+ */
+const missingParams = new Set<string>();
+
 const missingKeys = new Set<string>();
 
 const lookup = (lang: Lang, key: string): string => {
@@ -176,6 +183,19 @@ const lookup = (lang: Lang, key: string): string => {
 };
 
 export const missingKeyCount = (): number => missingKeys.size;
+export const missingParamCount = (): number => missingParams.size;
+
+const substitute = (key: string, template: string, params?: Record<string, string | number>): string => {
+  // проверка после подстановки, а не «были ли params»: самый частый промах — вызов вообще
+  // без параметров (кнопка «Запустить карьер за {cost} {symbol}» жила в таком виде)
+  const filled = params ? template.replace(/\{(\w+)\}/g, (match, name: string) => (params[name] === undefined ? match : String(params[name]))) : template;
+  const left = filled.match(/\{(\w+)\}/);
+  if (left && !missingParams.has(key)) {
+    missingParams.add(key);
+    log.warn("i18n", `в «${key}» не подставлен плейсхолдер {${left[1]}} — вызов передаёт другие параметры`);
+  }
+  return filled;
+};
 
 const playerLangs = new Map<string, Lang>();
 
@@ -185,18 +205,11 @@ export const setLang = (playerId: string, lang: Lang): void => {
 
 export const getLang = (playerId: string): Lang => playerLangs.get(playerId) ?? "ru";
 
-export const t = (player: Player | undefined, key: string, params?: Record<string, string | number>): string => {
-  const lang = player ? getLang(player.id) : "ru";
-  const template = lookup(lang, key);
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`));
-};
+export const t = (player: Player | undefined, key: string, params?: Record<string, string | number>): string =>
+  substitute(key, lookup(player ? getLang(player.id) : "ru", key), params);
 
-export const raw = (lang: Lang, key: string, params?: Record<string, string | number>): string => {
-  const template = lookup(lang, key);
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_match, name: string) => String(params[name] ?? `{${name}}`));
-};
+export const raw = (lang: Lang, key: string, params?: Record<string, string | number>): string =>
+  substitute(key, lookup(lang, key), params);
 
 export const translate = raw;
 

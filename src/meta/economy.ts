@@ -5,7 +5,7 @@ import { loadWorldJson, saveWorldJson } from "../kernel/store";
 import { clamp } from "../kernel/util";
 import { audit } from "../security/audit";
 import { effectivePlaySeconds, getProfile } from "./profiles";
-import { flushBalances, getMeta, markDirty } from "./balances";
+import { flushBalances, getMeta, markDirty, peekMeta } from "./balances";
 import { CURRENCY, DEFAULT_ECO_TUNABLES, META_KEYS, TRANSFERS } from "./config";
 import "./messages";
 import type { EcoLedger, EcoTunables, PlayerMeta, TxRecord } from "../types/domain";
@@ -31,6 +31,12 @@ const today = (): number => Math.floor(Date.now() / DAY_MS);
 export const getTunables = (): EcoTunables => tunables;
 
 export const circulation = (): number => Math.max(0, ledger.minted - ledger.burned);
+
+/**
+ * Кошелёк по id без создания записи и без Player — для сверок «состояние ↔ счётчики» в
+ * тестах и админских отчётах, где игрока уже может не быть в мире.
+ */
+export const peekWallet = (playerId: string): PlayerMeta | undefined => peekMeta(playerId);
 
 export const metaOf = (player: Player): PlayerMeta => {
   const record = getMeta(player.id, player.name);

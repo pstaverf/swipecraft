@@ -18,6 +18,37 @@ export const report = (player: Player, result: UiResult): void => {
   player.sendMessage(`${result.ok ? "§a✓" : "§c✗"} ${t(player, result.key, result.params)}`);
 };
 
+/**
+ * Отправка многострочного отчёта: строки упаковываются в сообщения не длиннее `limit`.
+ * Нужно затем, чтобы сводка вроде «24 строки очереди доната» (~960 символов) не уезжала
+ * в чат одним куском:
+ * клиент такую строку обрезает, и хвост отчёта теряется молча. До этого было два крайних
+ * варианта — `sendMessage(lines.join("\n"))` (один кусок, обрезается) и `note` (по
+ * сообщению на строку, 24 сообщения в чате). Здесь середина: страницы по ~900 символов.
+ */
+export const sendPaged = (player: Player, lines: string[], limit = 900): number => {
+  const pages: string[] = [];
+  let current = "";
+  for (const line of lines) {
+    const text = String(line ?? "");
+    if (text.length > limit) {
+      if (current.length > 0) pages.push(current);
+      current = "";
+      for (let index = 0; index < text.length; index += limit) pages.push(text.slice(index, index + limit));
+      continue;
+    }
+    if (current.length === 0) current = text;
+    else if (current.length + 1 + text.length <= limit) current = `${current}\n${text}`;
+    else {
+      pages.push(current);
+      current = text;
+    }
+  }
+  if (current.length > 0) pages.push(current);
+  for (const page of pages) player.sendMessage(page);
+  return pages.length;
+};
+
 export const note = (player: Player, lines: string[]): void => {
   if (lines.length === 0) {
     player.sendMessage(t(player, "ui.pick.none"));

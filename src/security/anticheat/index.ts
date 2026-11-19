@@ -61,7 +61,12 @@ const stateOf = (playerId: string): AcState => {
 };
 
 export const grantGrace = (playerId: string, ms: number): void => {
-  const state = stateOf(playerId);
+  // Окно тишины нужно тому, кто прямо сейчас в мире. Для оффлайн-id stateOf создал бы
+  // запись, а вычистить её уже некому: playerLeave отработал до этого вызова (отложенная
+  // задача, дождившаяся игрока). Память детекторов росла бы на каждый такой вызов.
+  const known = states.get(playerId);
+  if (!known && !world.getAllPlayers().some((player) => player.id === playerId)) return;
+  const state = known ?? stateOf(playerId);
   state.graceUntil = Math.max(state.graceUntil, Date.now() + ms);
   state.reachHits = 0;
   state.speedHits = 0;
@@ -77,6 +82,13 @@ export const resetState = (playerId: string): void => {
 };
 
 export const playerScore = (playerId: string): number => stateOf(playerId).score;
+
+/**
+ * Сколько игроков вообще состоит в памяти детекторов. Диагностика и headless-тесты: «скобка»
+ * обязана закрываться на playerLeave, иначе на потоке входов/выходов словарь растёт вечно.
+ * Счётчик намеренно не создаёт состояний — в отличие от playerScore.
+ */
+export const acTrackedCount = (): number => states.size;
 
 /**
  * Сколько миллисекунд остаётся до конца grace-окна (0 — окна нет). Только чтение: диагностика
@@ -384,8 +396,11 @@ export const initAnticheat = (): void => {
   });
 
   world.afterEvents.playerSpawn.subscribe((event) => {
+    // grantGrace уже обнуляет окна частот и счётчики — их на входе/респавне чистить и нужно.
+    // resetState сверх того стирал накопленный скор: «скинул себя в лаву» или переподключился
+    // — и история детекторов начинается с нуля, то есть игрок сам выбирает момент сброса
+    // подозрений. Скор снимает только затухание по времени (и выход из мира навсегда).
     grantGrace(event.player.id, 3000);
-    resetState(event.player.id);
   });
 
   system.runTimeout(() => {

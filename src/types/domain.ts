@@ -242,6 +242,18 @@ export interface SpawnBuildState {
   lastCheckAt: number;
   missing: number;
   season: number;
+  /**
+   * «Генеральная уборка»: после blueprint'а пройтись ещё и по объёму площади, который по
+   * плану обязан быть пустым. Ставится только на repair — при строительтве после вайпа
+   * там и так воздух, а 4700 чтений блока лишний груз серверу.
+   */
+  sweep: boolean;
+  /** курсор фазы зачистки (в индексах spawnClearCells) */
+  clearCursor: number;
+  /** сколько «чужих» блоков убрано текущей уборкой */
+  cleared: number;
+  /** чужие блоки, найденные последней проверкой (внутри площади, но вне blueprint'а) */
+  foreign: number;
 }
 
 export interface EcoTunables {

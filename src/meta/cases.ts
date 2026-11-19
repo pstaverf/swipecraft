@@ -263,6 +263,16 @@ export const caseStatsLines = (): string[] => {
   return lines;
 };
 
+/**
+ * Живой глобальный счётчик вскрытий. Строки `caseStatsLines()` для этого не годятся: их
+ * нельзя сравнить с кошельками без разбора текста, а сохранённый JSON отстаёт на такт
+ * автосейва — тест мерил бы задержку записи, а не согласованность счётчиков.
+ */
+export const caseStats = (): { pulls: number; byRarity: Record<string, number> } => ({
+  pulls: stats.pulls,
+  byRarity: { ...stats.byRarity },
+});
+
 export const pityOf = (player: Player): { value: number; need: number } => ({
   value: metaOf(player).pity,
   need: CASE_ECONOMY.pityPulls,

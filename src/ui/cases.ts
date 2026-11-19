@@ -4,7 +4,7 @@ import { safeRunAsync } from "../kernel/guard";
 import { t } from "../kernel/i18n";
 import { CURRENCY, CASE_ECONOMY, CASE_IDS } from "../meta/config";
 import type { CaseId } from "../types/domain";
-import { busyNote } from "./common";
+import { sendPaged, busyNote } from "./common";
 import { caseLogFor, casePrice, oddsLines, openCase } from "../meta/cases";
 import { openMenu } from "./menu";
 
@@ -21,7 +21,7 @@ const caseName = (player: Player, caseId: CaseId): string => t(player, `case.nam
 const pull = async (player: Player, caseId: CaseId, count: number, useKeys: boolean): Promise<void> => {
   const result = openCase(player, caseId, count, useKeys);
   player.sendMessage(t(player, result.key, result.params));
-  if (result.lines && result.lines.length > 0) player.sendMessage(result.lines.join("\n"));
+  if (result.lines && result.lines.length > 0) sendPaged(player, result.lines);
   if (result.ok) await openCaseDetail(player, caseId);
 };
 
@@ -55,7 +55,7 @@ const openCaseDetail = async (player: Player, caseId: CaseId): Promise<void> => 
         await pull(player, caseId, 1, true);
         return;
       case "log":
-        player.sendMessage(caseLogFor(player.name, 10).join("\n"));
+        sendPaged(player, caseLogFor(player.name, 10));
         return;
       case "list":
         await openCases(player);
@@ -87,7 +87,7 @@ export const openCases = async (player: Player): Promise<void> => {
     }
     const action = actions[response.selection];
     if (action === "log") {
-      player.sendMessage(caseLogFor(player.name, 12).join("\n"));
+      sendPaged(player, caseLogFor(player.name, 12));
       return;
     }
     if (action === "menu") {

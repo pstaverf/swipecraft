@@ -3,7 +3,7 @@ import { EnchantmentType } from "@minecraft/server";
 import { t } from "../kernel/i18n";
 import { log } from "../kernel/logger";
 import { loadWorldJson, saveWorldJson } from "../kernel/store";
-import { clamp } from "../kernel/util";
+import { clamp, uniqueId } from "../kernel/util";
 import { CONFIG } from "../config";
 import { audit, notifyAdmins } from "../security/audit";
 import { FORBIDDEN_LISTINGS, MARKET, META_KEYS } from "./config";
@@ -18,7 +18,7 @@ const MAX_BYTES = 400_000;
 let listings: Listing[] = [];
 let dirty = false;
 
-const idOf = (): string => `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+const idOf = (): string => uniqueId("lp");
 
 export interface MarketPreviewRow {
   slot: number;

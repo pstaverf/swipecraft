@@ -5,7 +5,7 @@ import { t } from "../kernel/i18n";
 import { DONATIONS } from "../meta/config";
 import { metaOf as metaOfRef } from "../meta/economy";
 import type { DonorTier } from "../types/domain";
-import { busyNote, labelIndex, numOf, onlinePlayers, report } from "./common";
+import { sendPaged, busyNote, labelIndex, numOf, onlinePlayers, report } from "./common";
 import {
   applyTier,
   catalogLines,
@@ -29,7 +29,7 @@ import {
   tierInfo,
   tierOf,
 } from "../meta/donations";
-import { cosmeticCatalog, grantCosmetic, purchaseHistory, receiptsCount } from "../meta/cosmetics";
+import { cosmeticCatalog, cosmeticsOf, grantCosmetic, purchaseHistory, receiptsCount } from "../meta/cosmetics";
 import { referralReport, resetBinding, topReferrers } from "../meta/referrals";
 import { openMetaAdmin } from "./admin-meta";
 import { openMenu } from "./menu";
@@ -89,8 +89,8 @@ export const openDonate = async (player: Player): Promise<void> => {
     if (action === "log") {
       const lines = myRequests.map((row) => `#${row.id} · ${row.tier} · ${row.days} ${t(player, "ui.days")} · ${row.status}`);
       if (lines.length === 0) lines.push(t(player, "ui.pick.none"));
-      lines.push(t(player, "don.you", { tier: tierOf(player), days: donorDaysLeft(player), keys: 0 }));
-      player.sendMessage(lines.join("\n"));
+      lines.push(t(player, "don.you", { tier: tierOf(player), days: donorDaysLeft(player), rolls: cosmeticsOf(player).rolls }));
+      sendPaged(player, lines);
       return;
     }
     if (action === "history") {
@@ -149,7 +149,7 @@ export const openDonRequests = async (player: Player): Promise<void> => {
     }
     const action = actions[response.selection];
     if (action === "log") {
-      player.sendMessage(grantLines(20).join("\n"));
+      sendPaged(player, grantLines(20));
       return;
     }
     if (action === "back" || action === undefined) {
@@ -258,10 +258,10 @@ export const openDonAdmin = async (player: Player): Promise<void> => {
         return;
       }
       case "log":
-        player.sendMessage(grantLines(24).join("\n"));
+        sendPaged(player, grantLines(24));
         return;
       case "queue":
-        player.sendMessage([...queueReport(), ...donorReport()].join("\n"));
+        sendPaged(player, [...queueReport(), ...donorReport()]);
         return;
       case "release":
         player.sendMessage(t(player, "ui.admin.queue.released", { count: releaseAll() }));

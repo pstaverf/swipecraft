@@ -5,7 +5,7 @@ import { t } from "../kernel/i18n";
 import { CURRENCY, RANK_CASE } from "../meta/config";
 import { getTunables } from "../meta/economy";
 import { rankLines, rankOddsLines, rankStatus, rankTopLines, rollRanks } from "../meta/ranks";
-import { busyNote } from "./common";
+import { sendPaged, busyNote } from "./common";
 import { openMenu } from "./menu";
 import "./messages";
 
@@ -52,7 +52,7 @@ export const openRanks = async (player: Player): Promise<void> => {
     }
     const result = rollRanks(player, action === "five" ? 5 : 1);
     player.sendMessage(t(player, result.key, result.params));
-    if (result.lines && result.lines.length > 0) player.sendMessage(result.lines.join("\n"));
+    if (result.lines && result.lines.length > 0) sendPaged(player, result.lines);
     if (result.ok) await openRanks(player);
   });
 };

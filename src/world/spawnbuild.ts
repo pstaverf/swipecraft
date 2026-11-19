@@ -218,6 +218,59 @@ export const spawnBlueprint = (): BlueprintCell[] => {
 export const spawnMenuBlockLocation = (): Vector3 => ({ x: lobby.x, y: floorY + 2, z: lobby.z - 4 });
 
 let cellIndex: Map<string, BlueprintCell> | undefined;
+let clearCache: BlueprintCell[] | undefined;
+
+/**
+ * Клетки, которых в blueprint'е нет, но которые ОБЯЗАНЫ быть пустыми: внутренний объём
+ * площади от плиты до самой верхней клетки плана (столбы, арки, фонари).
+ *
+ * Нужны затем, чтобы спавн возвращался к плану целиком, а не «наполовину». Проверка
+ * сверяла только blueprint-клетки, и из этого вылезало два: (1) блок, притащенный на площадь
+ * при снятом стоп-кране, оставался там навсегда — план его не описывает, значит и чинить
+ * нечего; (2) выбитая клетка пола лечилась только если выборка нашла сразу
+ * `repairAfterMissing` дырок, а при 1–3 находках проверка просто писала число в статус.
+ */
+export const spawnClearCells = (): BlueprintCell[] => {
+  if (clearCache) return clearCache;
+  const blueprint = spawnBlueprint();
+  const known = new Set(blueprint.map((cell) => `${cell.x}:${cell.y}:${cell.z}`));
+  let top = floorY;
+  for (const cell of blueprint) top = Math.max(top, cell.y);
+  const cells: BlueprintCell[] = [];
+  for (let dx = -half + 1; dx <= half - 1; dx += 1) {
+    for (let dz = -half + 1; dz <= half - 1; dz += 1) {
+      for (let y = floorY + 1; y <= top; y += 1) {
+        const x = lobby.x + dx;
+        const z = lobby.z + dz;
+        if (known.has(`${x}:${y}:${z}`)) continue;
+        cells.push({ x, y, z, typeId: "minecraft:air" });
+      }
+    }
+  }
+  clearCache = cells;
+  return cells;
+};
+
+/** Клетка blueprint'а, которую надо записать, — или клетка зачистки (typeId = air). */
+const cellKeyOf = (cell: BlueprintCell): string => `${cell.x}:${cell.y}:${cell.z}`;
+
+/**
+ * Пустые клетки, которые сверяются ВСЕГДА, а не по выборке: воздух над точкой возрождения
+ * (иначе игрок встаёт в блок) и четыре проёма в ограде (иначе площадь превращается в клетку,
+ * из которой не выйти). Их шесть, стоимость — шесть чтений на проверку.
+ */
+export const spawnCriticalClearCells = (): BlueprintCell[] => {
+  const known = new Set(spawnBlueprint().map((cell) => cellKeyOf(cell)));
+  const candidates: BlueprintCell[] = [
+    { x: lobby.x, y: floorY + 1, z: lobby.z, typeId: "minecraft:air" },
+    { x: lobby.x, y: floorY + 2, z: lobby.z, typeId: "minecraft:air" },
+    { x: lobby.x, y: floorY + 1, z: lobby.z + half - 1, typeId: "minecraft:air" },
+    { x: lobby.x, y: floorY + 1, z: lobby.z - half + 1, typeId: "minecraft:air" },
+    { x: lobby.x + half - 1, y: floorY + 1, z: lobby.z, typeId: "minecraft:air" },
+    { x: lobby.x - half + 1, y: floorY + 1, z: lobby.z, typeId: "minecraft:air" },
+  ];
+  return candidates.filter((cell) => !known.has(cellKeyOf(cell)));
+};
 
 /**
  * Ожидание blueprint'а для конкретной клетки. Нужно затем, чтобы откат установки блока на
@@ -246,7 +299,18 @@ const state: SpawnBuildState = {
   lastCheckAt: 0,
   missing: 0,
   season: 0,
+  sweep: false,
+  clearCursor: 0,
+  cleared: 0,
+  foreign: 0,
 };
+
+/**
+ * Точечные записи последней проверки (выбитые клетки плана и чужие блоки). В память, не в
+ * хранилище:список короткий (≤ blocksPerRun), а после рестарта проверка пройдёт заново и
+ * соберёт её снова — терять тут нечего, а поле в JSON только бы протухало.
+ */
+let pendingPins: BlueprintCell[] = [];
 
 let dirty = false;
 
@@ -263,6 +327,10 @@ const persist = (): void => {
     lastCheckAt: state.lastCheckAt,
     missing: state.missing,
     season: state.season,
+    sweep: state.sweep,
+    clearCursor: state.clearCursor,
+    cleared: state.cleared,
+    foreign: state.foreign,
   });
 };
 
@@ -278,15 +346,37 @@ export const loadSpawnBuild = (): void => {
   state.lastCheckAt = Number.isFinite(stored.lastCheckAt) ? (stored.lastCheckAt as number) : 0;
   state.missing = Number.isFinite(stored.missing) ? Math.max(0, Math.floor(stored.missing as number)) : 0;
   state.season = Number.isFinite(stored.season) ? (stored.season as number) : 0;
+  state.sweep = stored.sweep === true;
+  const clearTotal = spawnClearCells().length;
+  state.clearCursor = Number.isFinite(stored.clearCursor) ? Math.min(Math.max(0, Math.floor(stored.clearCursor as number)), clearTotal) : 0;
+  state.cleared = Number.isFinite(stored.cleared) ? Math.max(0, Math.floor(stored.cleared as number)) : 0;
+  state.foreign = Number.isFinite(stored.foreign) ? Math.max(0, Math.floor(stored.foreign as number)) : 0;
 };
 
-export const startSpawnBuild = (actor: string, mode: SpawnBuildMode): { ok: boolean; key: string; params?: Record<string, string | number> } => {
+export interface SpawnBuildRequest {
+  /** записать/очистить эти клетки первыми, до общего прохода по плану */
+  pins?: BlueprintCell[];
+  /** после плана пройтись и по «должен быть пуст» объёму (только repair) */
+  sweep?: boolean;
+}
+
+export const startSpawnBuild = (
+  actor: string,
+  mode: SpawnBuildMode,
+  request: SpawnBuildRequest = {},
+): { ok: boolean; key: string; params?: Record<string, string | number> } => {
   const blueprint = spawnBlueprint();
   if (state.running) return { ok: false, key: "spawn.err.running", params: { done: state.written, total: state.total } };
   state.mode = mode;
   state.cursor = 0;
   state.written = 0;
   state.missing = 0;
+  state.sweep = mode === "repair" && request.sweep === true;
+  state.clearCursor = 0;
+  state.cleared = 0;
+  state.foreign = 0;
+  // список короткий по построению: его собирает выборка проверки (≤ 3 × sampleCells)
+  pendingPins = [...(request.pins ?? [])];
   state.running = true;
   state.startedAt = Date.now();
   state.total = blueprint.length;
@@ -322,6 +412,13 @@ export const spawnBuildTick = (): void => {
   const blueprint = spawnBlueprint();
   if (!state.running) return;
   let spent = 0;
+  // 1. точечные находки последней проверки — их ждёт игрок прямо сейчас, поэтому они идут
+  //    до общего прохода и не зависят от того, «созрел» ли порог полной пересборки
+  while (pendingPins.length > 0 && spent < s.blocksPerRun) {
+    spent += 1;
+    if (writeCell(pendingPins.shift() as BlueprintCell)) dirty = true;
+  }
+  // 2. план
   while (state.cursor < blueprint.length && spent < s.blocksPerRun) {
     const cell = blueprint[state.cursor];
     state.cursor += 1;
@@ -335,23 +432,45 @@ export const spawnBuildTick = (): void => {
   dirty = true;
   persist();
   if (state.cursor < blueprint.length) return;
+  // 3. уборка: объём, который по плану обязан быть пустым. Только в repair и только когда
+  //    проверка сочла повреждения массовыми — иначе платим 4700 чтений за каждую ерунду
+  const clearCells = state.sweep ? spawnClearCells() : [];
+  while (state.sweep && state.clearCursor < clearCells.length && spent < s.blocksPerRun) {
+    const cell = clearCells[state.clearCursor];
+    state.clearCursor += 1;
+    spent += 1;
+    if (writeCell(cell)) {
+      state.cleared += 1;
+      dirty = true;
+    }
+  }
+  if (state.sweep && state.clearCursor < clearCells.length) {
+    persist();
+    return;
+  }
   state.running = false;
+  state.sweep = false;
   dirty = true;
   persist();
-  notifyAdmins(`[spawn] сборка завершена: записано ${state.written} ячеек из ${blueprint.length}`);
+  notifyAdmins(
+    `[spawn] сборка завершена: записано ${state.written} ячеек из ${blueprint.length}` +
+      (state.cleared > 0 ? `, убрано чужих блоков: ${state.cleared}` : ""),
+  );
 };
 
 /**
  * Дешёвая проверка целостности: не обходим весь blueprint (755 чтений каждые 30 с —
  * лишняя нагрузка на пустом сервере), а берём детерминированную выборку со сдвигом.
  */
-export const checkSpawnIntegrity = (force = false): { checked: number; missing: number } => {
+export const checkSpawnIntegrity = (
+  force = false,
+): { checked: number; missing: number; foreign: number; pinned: number } => {
   const blueprint = spawnBlueprint();
+  const clearCells = spawnClearCells();
   const samples = Math.min(s.sampleCells, blueprint.length);
   const stride = Math.max(1, Math.floor(blueprint.length / samples));
   const shift = Math.floor(Date.now() / 1000) % stride;
   const seen = new Set<number>();
-  let missing = 0;
   for (let index = 0; index < samples; index += 1) {
     seen.add((index * stride + shift) % blueprint.length);
   }
@@ -359,19 +478,46 @@ export const checkSpawnIntegrity = (force = false): { checked: number; missing: 
     const position = blueprint.indexOf(cell);
     if (position >= 0) seen.add(position);
   }
+  const pins: BlueprintCell[] = [];
+  let missing = 0;
   for (const position of seen) {
-    if (!sameBlock(blueprint[position])) missing += 1;
+    const cell = blueprint[position];
+    if (sameBlock(cell)) continue;
+    missing += 1;
+    pins.push(cell);
   }
-  state.missing = missing;
+  // та же выборка по «должен быть пуст»: свой stride, потому что объём зачистки больше плана
+  const clearSamples = Math.min(s.sampleCells, clearCells.length);
+  const clearStride = Math.max(1, Math.floor(clearCells.length / clearSamples));
+  const clearShift = Math.floor(Date.now() / 1000) % clearStride;
+  const checkedClear = new Set<number>();
+  for (let index = 0; index < clearSamples; index += 1) {
+    checkedClear.add((index * clearStride + clearShift) % Math.max(1, clearCells.length));
+  }
+  for (const cell of spawnCriticalClearCells()) {
+    checkedClear.add(clearCells.findIndex((row) => row.x === cell.x && row.y === cell.y && row.z === cell.z));
+  }
+  let foreign = 0;
+  for (const position of checkedClear) {
+    const cell = clearCells[position];
+    if (!cell || sameBlock(cell)) continue;
+    foreign += 1;
+    pins.push(cell);
+  }
+  state.missing = missing + foreign;
+  state.foreign = foreign;
   state.lastCheckAt = Date.now();
   dirty = true;
   persist();
-  if (force) return { checked: seen.size, missing };
-  if (missing >= s.repairAfterMissing && !state.running) {
-    log.warn("spawn", `проверка нашла расхождений: ${missing} из ${samples}, запускаю починку`);
-    startSpawnBuild("spawn-watch", "repair");
-  }
-  return { checked: seen.size, missing };
+  if (force) return { checked: seen.size + checkedClear.size, missing, foreign, pinned: pins.length };
+  if (state.running || pins.length === 0) return { checked: seen.size + checkedClear.size, missing, foreign, pinned: 0 };
+  const sweep = missing + foreign >= s.repairAfterMissing;
+  log.warn(
+    "spawn",
+    `проверка нашла расхождений: ${missing} плана + ${foreign} чужих блоков, чиню точечно${sweep ? " и запускаю уборку" : ""}`,
+  );
+  startSpawnBuild("spawn-watch", "repair", { pins, sweep });
+  return { checked: seen.size + checkedClear.size, missing, foreign, pinned: pins.length };
 };
 
 /**
@@ -403,13 +549,28 @@ export const setSpawnPoint = (): void => {
   }
 };
 
-export const spawnStatus = (): { built: number; total: number; running: boolean; missing: number; mode: SpawnBuildMode; cursor: number } => ({
+export const spawnStatus = (): {
+  built: number;
+  total: number;
+  running: boolean;
+  missing: number;
+  mode: SpawnBuildMode;
+  cursor: number;
+  foreign: number;
+  cleared: number;
+  sweep: boolean;
+  pinned: number;
+} => ({
   built: state.written,
   total: state.total,
   running: state.running,
   missing: state.missing,
   mode: state.mode,
   cursor: state.cursor,
+  foreign: state.foreign,
+  cleared: state.cleared,
+  sweep: state.sweep,
+  pinned: pendingPins.length,
 });
 
 export const spawnPreviewLines = (): string[] => {
@@ -449,6 +610,11 @@ export const initSpawnBuild = (seasonIndex: number): void => {
     state.running = true;
     state.mode = "build";
     state.season = seasonIndex;
+    state.sweep = false;
+    state.clearCursor = 0;
+    state.cleared = 0;
+    state.foreign = 0;
+    pendingPins = [];
     dirty = true;
     persist();
     log.info("spawn", `сезон ${seasonIndex}: спавн пересобирается с нуля (${blueprint.length} ячеек)`);

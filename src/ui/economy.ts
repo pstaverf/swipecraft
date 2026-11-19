@@ -3,7 +3,7 @@ import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { safeRunAsync } from "../kernel/guard";
 import { t } from "../kernel/i18n";
 import { CURRENCY, TRANSFERS } from "../meta/config";
-import { byName, busyNote, numOf, onlinePlayers, report } from "./common";
+import { sendPaged, busyNote, byName, numOf, onlinePlayers, report } from "./common";
 import { balance, canTransfer, getTunables, lockedBalance, sellHeld, transfer, walletLines } from "../meta/economy";
 import { leaderboardLines } from "../meta/progress";
 import { openProgress } from "./progress";
@@ -23,7 +23,7 @@ export const openTop = async (player: Player): Promise<void> => {
     }
     const kind = kinds[response.selection];
     if (!kind) return;
-    player.sendMessage(leaderboardLines(player, kind).join("\n"));
+    sendPaged(player, leaderboardLines(player, kind));
   });
 };
 

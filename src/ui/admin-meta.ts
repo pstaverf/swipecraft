@@ -3,7 +3,7 @@ import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 import { safeRunAsync } from "../kernel/guard";
 import { t } from "../kernel/i18n";
 import { CURRENCY } from "../meta/config";
-import { busyNote, labelIndex, numOf, onlinePlayers, report } from "./common";
+import { sendPaged, busyNote, labelIndex, numOf, onlinePlayers, report } from "./common";
 import {
   metaAdminLines,
   metaCaseLines,
@@ -141,10 +141,10 @@ const openEcoAdmin = async (player: Player): Promise<void> => {
         await openMintBurn(player);
         return;
       case "tx":
-        player.sendMessage(metaTxLines(15).join("\n"));
+        sendPaged(player, metaTxLines(15));
         return;
       case "accounts":
-        player.sendMessage(accountsReport().join("\n"));
+        sendPaged(player, accountsReport());
         return;
       case "reset":
         report(player, text(metaResetConfig()));
@@ -310,7 +310,7 @@ export const openMetaAdmin = async (player: Player): Promise<void> => {
     }
     switch (META_ADMIN_ENTRIES[response.selection]?.action) {
       case "status":
-        player.sendMessage(metaStatusLines().join("\n"));
+        sendPaged(player, metaStatusLines());
         return;
       case "eco":
         await openEcoAdmin(player);

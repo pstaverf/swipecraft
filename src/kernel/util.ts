@@ -7,6 +7,22 @@ export const distance2d = (a: Vector3, b: Vector3): number => Math.hypot(a.x - b
 export const distance3d = (a: Vector3, b: Vector3): number =>
   Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
+/**
+ * Короткий уникальный id записи: метка времени + монотонный счётчик.
+ *
+ * `Math.random()` для идентификаторов не годился: при пачке записей, созданных за одну
+ * миллисекунду (массовая выставка лотов, несколько заявок доната, два клана из одного
+ * скрипта), 1296 случайных вариантов сталкиваются по закону дней рождения — а id является
+ * ключом поиска («купить лот lp…», «клуб c…»), и дубликат значит «продал не то».
+ * Счётчик гарантирует уникальность внутри процесса, время — между перезапусками.
+ */
+let idSeq = 0;
+
+export const uniqueId = (prefix: string): string => {
+  idSeq += 1;
+  return `${prefix}${Date.now().toString(36)}${idSeq.toString(36)}`;
+};
+
 export const randomInt = (min: number, max: number): number => min + Math.floor(Math.random() * (max - min + 1));
 
 export const randomPointInRing = (minRadius: number, maxRadius: number): { x: number; z: number } => {

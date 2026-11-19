@@ -48,7 +48,8 @@ export const kothEvent: EventHandler = {
     active.data.timeInside = {};
     active.data.contested = false;
 
-    titleAll("ev.koth.title", undefined, "ev.koth.subtitle");
+    // {seconds} в подзаголовке: titleAll прокидывает один params и в title, и в subtitle
+    titleAll("ev.koth.title", { seconds: CONFIG.requiredSeconds }, "ev.koth.subtitle");
     soundAll("random.orb", 0.9);
     announce("ev.koth.coords", { x: point.x, y, z: point.z, r: CONFIG.radius, seconds: CONFIG.requiredSeconds });
   },

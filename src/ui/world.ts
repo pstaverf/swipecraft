@@ -56,7 +56,12 @@ const QUARRY_OWN_ENTRIES: readonly Entry[] = [
   { key: "quarry.how", action: "how" },
 ];
 const QUARRY_FREE_ENTRIES: readonly Entry[] = [{ key: "quarry.how", action: "how" }];
-const START_ENTRY: Entry = { key: "quarry.start", action: "start" };
+/** подпись «за {cost} {symbol}» — цена живёт в CONFIG, поэтому строка собирается на рендере */
+const startEntry = (player: Player): Entry => ({
+  key: "quarry.start",
+  action: "start",
+  params: { cost: CONFIG.quarry.setupCost, symbol: CURRENCY.symbol },
+});
 const BACK_ENTRY: Entry = { key: "ui.menu", action: "back" };
 const BACK_TO_WORLD: Entry = { key: "common.back", action: "back" };
 const CONFIRM_ENTRIES: readonly Entry[] = [
@@ -103,7 +108,7 @@ const confirmLaunch = async (player: Player): Promise<void> => {
 export const openQuarry = async (player: Player): Promise<void> => {
   await safeRunAsync("ui:quarry", async () => {
     const claim = findQuarry(player.id);
-    const entries = [...(claim ? QUARRY_OWN_ENTRIES : [START_ENTRY, ...QUARRY_FREE_ENTRIES]), BACK_ENTRY];
+    const entries = [...(claim ? QUARRY_OWN_ENTRIES : [startEntry(player), ...QUARRY_FREE_ENTRIES]), BACK_ENTRY];
     const form = new ActionFormData().title(t(player, "quarry.title")).body(quarryBody(player).slice(0, 1800));
     for (const entry of entries) {
       const params = entry.action === "collect" && claim ? { items: quarryItems(claim) } : entry.params;
@@ -175,7 +180,7 @@ const openSpawnAdmin = async (player: Player): Promise<void> => {
       return;
     }
     if (action === "repair" || action === "build") {
-      report(player, startSpawnBuild(player.name, action));
+      report(player, startSpawnBuild(player.name, action, { sweep: action === "repair" }));
       return;
     }
     if (action === "point") {

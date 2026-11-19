@@ -2,7 +2,7 @@ import { Player, world } from "@minecraft/server";
 import { t } from "../kernel/i18n";
 import { log } from "../kernel/logger";
 import { clearWorldJson, dynamicPropertyBudget, loadWorldJson, saveWorldJson } from "../kernel/store";
-import { clamp } from "../kernel/util";
+import { clamp, uniqueId } from "../kernel/util";
 import { audit, notifyAdmins } from "../security/audit";
 import { CLANS, META_KEYS } from "./config";
 import { accountBalance, balance, burn, burnAccount, depositToAccount, getTunables, transferBetweenAccounts, withdrawFromAccount } from "./economy";
@@ -237,7 +237,7 @@ export const createClan = (player: Player, name: string, tag: string, fee: numbe
     notifyAdmins("[clans] создание клана заблокировано: хранилище dynamic properties близко к лимиту");
     return { ok: false, key: "clan.storage" };
   }
-  const clanId = `c${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+  const clanId = uniqueId("c");
   if (fee > 0) {
     const burned = burn(player, fee, "clan create");
     if (!burned.ok) return { ok: false, key: burned.key, params: burned.params };

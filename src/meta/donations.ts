@@ -2,7 +2,7 @@ import { Player, world } from "@minecraft/server";
 import { t } from "../kernel/i18n";
 import { log } from "../kernel/logger";
 import { loadWorldJson, saveWorldJson } from "../kernel/store";
-import { distance3d } from "../kernel/util";
+import { distance3d, uniqueId } from "../kernel/util";
 import { audit, notifyAdmins } from "../security/audit";
 import { DONATIONS, META_KEYS, QUEUE } from "./config";
 import { getTunables, grantKeys, metaOf, mintToId } from "./economy";
@@ -217,7 +217,7 @@ export const submitRequest = (player: Player, tier: DonorTier, days: number, not
   if (tier === "none") return t(player, "don.tierNone");
   const open = requests.find((row) => row.playerId === player.id && row.status === "open");
   if (open) return t(player, "don.requestExists", { id: open.id });
-  const id = `${Date.now().toString(36).slice(-5)}${Math.floor(Math.random() * 1296).toString(36)}`;
+  const id = uniqueId("d");
   requests.push({ id, playerId: player.id, player: player.name, tier, days, note, at: Date.now(), status: "open", by: "" });
   if (requests.length > DONATIONS.requestsMax) requests = requests.slice(-DONATIONS.requestsMax);
   dirty = true;
