@@ -1,6 +1,14 @@
 export const ui = {
   shown: [],
   answers: [],
+  /**
+   * Политика ответов для soak-прогона: (record) => ответ | undefined. Нужна потому, что
+   * `answers` — глобальная очередь, а в soak формы десятков игроков идут вперемешку.
+   * run.mjs политика не выставляет, поэтому его очередь работает как раньше.
+   */
+  policy: undefined,
+  /** сколько show() бросило исключение (soak считает это отдельной инвариантностью) */
+  thrown: 0,
 };
 
 export const answer = (value) => {
@@ -24,16 +32,38 @@ const fill = (record, values) =>
     return value;
   });
 
-const next = (record) => {
-  ui.shown.push(record);
-  if (ui.answers.length === 0) return { canceled: true, cancelationReason: FormCancelationReason.UserClosed };
-  let value = ui.answers.shift();
-  if (typeof value === "function") value = value(record);
-  if (value === undefined || value === "cancel") return { canceled: true, cancelationReason: FormCancelationReason.UserClosed };
+const shape = (value) => {
+  if (typeof value === "function") return value;
+  return value;
+};
+
+const respond = (record, value) => {
+  if (value === undefined || value === null || value === "cancel") return { canceled: true, cancelationReason: FormCancelationReason.UserClosed };
   if (typeof value === "number") return { canceled: false, selection: value, response: undefined };
   if (Array.isArray(value)) return { canceled: false, formValues: fill(record, value), selection: undefined };
   return { canceled: false, ...value };
 };
+
+const next = (record) => {
+  ui.shown.push(record);
+  if (ui.answers.length === 0) {
+    // soak-прогон: игрок «отвечает» по политике; undefined = форму закрыл, как и раньше
+    if (!ui.policy) return { canceled: true, cancelationReason: FormCancelationReason.UserClosed };
+    let value;
+    try {
+      value = ui.policy(record);
+    } catch (error) {
+      ui.thrown += 1;
+      record.policyError = String(error?.message ?? error);
+      value = "cancel";
+    }
+    return respond(record, value === undefined ? "cancel" : shape(value));
+  }
+  let value = ui.answers.shift();
+  if (typeof value === "function") value = value(record);
+  return respond(record, value);
+};
+
 
 class BaseForm {
   constructor(kind) {

@@ -1429,6 +1429,18 @@ scenario("mods (авто-шахта и сборщик спавна)");
 
 const QUARRY_SPOT = { x: 200, y: 60, z: 200 };
 const cellKey = (x, y, z) => `${x}:${y}:${z}`;
+/**
+ * Сборщик теперь стартует и сам (watchdog чинит найденное), и уборка объёма идёт ~30
+ * проходов. Ждём его ПРЯМЫМИ вызовами spawnBuildTick, а не мировыми тиками: иначе этот
+ * тест молча сдвигал бы тайминги всем сценариям правее (HUD и ранги сверяют «последняя
+ * запись бара», и лишние 800 тиков меняют, кто успел обновиться).
+ */
+const drainBuild = (limit = 600) => {
+  const build = globalThis.__swipecraftProbe.spawnBuild;
+  for (let index = 0; index < limit && build.spawnStatus().running; index += 1) build.spawnBuildTick();
+  return build.spawnStatus();
+};
+
 const claimRow = () => (readJson("sw:quarry")?.claims ?? [])[0];
 const QUARRY_CELLS = 11 * 11 * 8;
 const CONFIG_BUFFER_STACKS = 8;
@@ -1739,6 +1751,7 @@ await step("админ-экраны модов на пустом мире и т�
 });
 
 await step("починка спавна: дыра под точкой возрождения закрывается", () => {
+  const build = globalThis.__swipecraftProbe.spawnBuild;
   mc.state.blockOverrides.set(cellKey(0, 79, 0), "minecraft:air");
   const checkLine = reply("sw:spawn", admin, "check");
   must(/расхождений[^\n]*[1-9]/.test(checkLine), `проверка не увидела дыру: ${checkLine}`);
@@ -1747,12 +1760,17 @@ await step("починка спавна: дыра под точкой возро
   const busy = reply("sw:spawn", admin, "build");
   must(/уже идёт/.test(busy), `вторая сборка не отклонена: ${busy}`);
   mc.tickTimes(80);
+  // repair теперь ведёт и уборку объёма «должен быть пуст» (~2900 клеток по 120 за проход)
+  drainBuild();
   must(mc.state.blockOverrides.get(cellKey(0, 79, 0)) === "minecraft:polished_andesite", "дыра не заделана");
   const status = reply("sw:spawn", admin, "status");
   must(/простаивает/.test(status), `после починки сборка не остановилась: ${status}`);
+  const sweep = build.spawnStatus();
+  must(sweep.cleared === 0, `уборка на чистой площади снесла ${sweep.cleared} клеток — объём зачистки пересекается с планом`);
+  must(sweep.sweep === false, `уборка не выключилась по завершении: ${JSON.stringify(sweep)}`);
   const preview = reply("sw:spawn", admin, "preview");
   must(/ячеек всего: \d+/.test(preview) && preview.includes("gold_block"), `preview: ${preview.slice(0, 140)}`);
-  return checkLine.match(/расхождений[^\n]*/)[0];
+  return `${checkLine.match(/расхождений[^\n]*/)[0]}, уборка: ${sweep.cleared} записей`;
 });
 
 await step("алтарь спавна открывает меню и отменяет взаимодействие", () => {
@@ -2144,6 +2162,7 @@ const probeS = () => globalThis.__swipecraftProbe.spawn;
 const spawnBuildProbe = () => globalThis.__swipecraftProbe.spawnBuild;
 const FLOOR_CELL = cellKey(0, 79, 0);
 
+
 check("ломать блоки на спавне нельзя, и причина называется", () => {
   const before = mc.state.blockOverrides.get(FLOOR_CELL);
   must(before === "minecraft:polished_andesite", `пол спавна не из blueprint'а: ${before}`);
@@ -2262,11 +2281,74 @@ check("античит не видит служебных отказов защи
   return "25 отказов = 0, 25 добыч = штраф, resetState чист";
 });
 
+check("длинные отчёты уходят страницами и не теряются", () => {
+  const pager = globalThis.__swipecraftProbe.uiCommon;
+  const reader = mc.makePlayer("p-pager", "Pager", { x: 40, y: 71, z: 40 });
+  const lines = Array.from({ length: 40 }, (_, index) => `строка ${index} · ${"x".repeat(40)}`);
+  const total = lines.reduce((sum, line) => sum + line.length, 0);
+  const chatLog = mc.state.chat.splice(0); // снимок: чат мока общий, следующий чек читает историю
+  const pages = pager.sendPaged(reader, lines);
+  const sent = mc.state.chat.filter((row) => row.to === "Pager").map((row) => row.text);
+  must(sent.length === pages, `пагинатор вернул ${pages} страниц, а в чате ${sent.length}`);
+  must(sent.length >= 2, `отчёт на ${total} символов влез в одно сообщение (${sent.length}) — клиент обрежет хвост`);
+  for (const text of sent) {
+    must(text.length <= 900, `страница длиннее лимита: ${text.length} символов`);
+  }
+  // склеиваем страницы обратно: ни одна строка не должна потеряться или переставиться
+  const restored = sent.join("\n").split("\n");
+  must(restored.length === lines.length, `строк стало ${restored.length} вместо ${lines.length}`);
+  for (let index = 0; index < lines.length; index += 1) {
+    must(restored[index] === lines[index], `строка ${index} исказилась: ${restored[index]?.slice(0, 40)}`);
+  }
+  // и одна гигантская строка не имеет права пропасть — её режем поперёк
+  mc.state.chat.length = 0;
+  try {
+  const monster = "y".repeat(2400);
+  pager.sendPaged(reader, [monster]);
+  const big = mc.state.chat.filter((row) => row.to === "Pager").map((row) => row.text);
+  must(big.join("").length === monster.length, `гигантская строка уехала не целиком: ${big.join("").length} из ${monster.length}`);
+    for (const text of big) must(text.length <= 900, `кусок гигантской строки длиннее лимита: ${text.length}`);
+  } finally {
+    mc.state.chat.length = 0;
+    mc.state.chat.push(...chatLog); // журнал возвращаем как был — иначе соседние проверки ослепнут
+  }
+  mc.removePlayer("p-pager");
+  return `${lines.length} строк → ${sent.length} страниц, склейка точная`;
+});
+
+check("респавн гасит окна частот, но не накопленное подозрение", () => {
+  const ac = globalThis.__swipecraftProbe.anticheat;
+  const cheat = mc.makePlayer("p-ac-ghost", "AcGhost", { x: 70, y: 71, z: 70 });
+  // вход в мир выдаёт grace-окно (чтобы детекторы не съели сам респаун) — ждём его окончания,
+  // иначе проверка измеряет «окно тишины», а не реакцию на добычу
+  mc.advance(4000);
+  mc.tickOnce();
+  must(ac.graceLeftMs(cheat.id) === 0, `грейс после входа не истёк: ${ac.graceLeftMs(cheat.id)}`);
+  expectedWarns.push(/\[anticheat\].*AcGhost nuke/); // штраф намеренный — им и меряем
+  for (let index = 0; index < 25; index += 1) {
+    mc.state.blockOverrides.set(cellKey(70 + (index % 3), 71, 70), "minecraft:stone");
+    mc.breakBlock(cheat, { x: 70 + (index % 3), y: 71, z: 70 });
+  }
+  const before = ac.playerScore(cheat.id);
+  must(before > 0, `вспышка добычи не дала скора (0) — детектор nuke молчит`);
+  must(ac.graceLeftMs(cheat.id) === 0, `грейс-окно без причины активно: ${ac.graceLeftMs(cheat.id)}`);
+  // смерть/переподключение: игрок не должен уметь обнулить себе историю одним /kill
+  mc.fire("after", "playerSpawn", { player: cheat, initialSpawn: false });
+  must(ac.graceLeftMs(cheat.id) > 0, "на спавн не выдано grace-окно — детекторы движения прочитают респаун как аномалию");
+  const after = ac.playerScore(cheat.id);
+  must(after === before, `респавн обнулил подозрение: ${before} → ${after}`);
+  ac.resetState(cheat.id);
+  mc.removePlayer(cheat.id);
+  must(ac.playerScore("p-ac-ghost") === 0, "resetState не сбросил счётчик — следующие проверки начнут с чужого скора");
+  return `скор ${before} пережил респавн, grace выдан, после resetState — 0`;
+});
+
 check("защита не мешает скрипту чинить спавн, а стоп-кран открывает ломку", () => {
   const probe = probeS();
   const build = spawnBuildProbe();
   // «выжженная» клетка внутри круга: скриптовая правка не является событием игрока, защита
   // обязана пропустить и починку при включённой защите, и запись в ту же клетку
+  drainBuild();
   mc.state.blockOverrides.set(cellKey(3, 79, 3), "minecraft:air");
   const launch = build.startSpawnBuild("stable", "repair");
   must(launch.ok, `починка не запустилась: ${JSON.stringify(launch)}`);
@@ -2281,6 +2363,7 @@ check("защита не мешает скрипту чинить спавн, а
   reply("sw:meta", admin, "set", "spawnProtectEnabled", "true");
   flush();
   probe.forgetNotice(alice.id);
+  drainBuild();
   const relaunch = build.startSpawnBuild("stable", "repair");
   must(relaunch.ok, `вторая починка не запустилась: ${JSON.stringify(relaunch)}`);
   mc.tickTimes(60);
@@ -2335,18 +2418,80 @@ check("blueprint спавна: ни одной дублирующейся кле
   const cells = build.spawnBlueprint();
   const keys = new Set(cells.map((cell) => cellKey(cell.x, cell.y, cell.z)));
   must(keys.size === cells.length, `в blueprint'е ${cells.length - keys.size} клеток-дублей: починка будет вечно перестраивать площадь`);
+  drainBuild();
   const launch = build.startSpawnBuild("stable", "build");
   must(launch.ok, `сборка не запустилась: ${JSON.stringify(launch)}`);
   mc.tickTimes(120);
   const status = build.spawnStatus();
   must(status.running === false, `сборка не завершилась: ${JSON.stringify(status)}`);
   // второй проход по уже собранной площади не должен записать ни одной ячейки
-  build.startSpawnBuild("stable", "repair");
-  mc.tickTimes(120);
+  drainBuild();
+  build.startSpawnBuild("stable", "repair", { sweep: true });
+  mc.tickTimes(200);
   const again = build.spawnStatus();
   must(again.built === 0, `повторная починка переписала ${again.built} ячеек — blueprint не идемпотентен`);
   must(again.missing === 0, `целостность не сходится: ${again.missing} расхождений`);
   return `${cells.length} ячеек, повторный проход: 0 записей`;
+});
+
+check("watchdog чинит ОДНУ дыру, не дожидаясь порога repairAfterMissing", () => {
+  expectedWarns.push(/\[warn\]\[spawn\] проверка нашла расхождений/);
+  const build = spawnBuildProbe();
+  must(drainBuild().running === false, `сборщик занят: ${JSON.stringify(build.spawnStatus())}`);
+  // берём критическую клетку: выборка проверки смотрит 24 клетки из 968, и случайная дыра
+  // в неё могла бы не попасть — тогда провал теста был бы лотереей
+  const cell = build.spawnCriticalCells().find((row) => mc.state.blockOverrides.get(cellKey(row.x, row.y, row.z)) === row.typeId);
+  must(cell, "не нашёл критическую клетку плана для проверки");
+  mc.state.blockOverrides.set(cellKey(cell.x, cell.y, cell.z), "minecraft:air");
+  const launch = build.checkSpawnIntegrity();
+  must(launch.missing >= 1, `проверка не посчитала дыру: ${JSON.stringify(launch)}`);
+  must(launch.pinned >= 1, `дыра не поставлена в точечный ремонт — одна клетка по-прежнему ждёт, пока выборка найдёт ${">="} ${4}`);
+  build.spawnBuildTick();
+  must(
+    mc.state.blockOverrides.get(cellKey(cell.x, cell.y, cell.z)) === cell.typeId,
+    "точечный ремонт не заделал дыру — одна клетка по-прежнему лечится только полной пересборкой",
+  );
+  must(build.spawnStatus().pinned === 0, `pins не израсходованы: ${JSON.stringify(build.spawnStatus())}`);
+  drainBuild();
+  return `после 1 находки: проверено ${launch.checked}, в ремонт поставлено ${launch.pinned}`;
+});
+
+check("чужой блок на площади убирается, и берётся в ремонт сразу", () => {
+  const CONFIG_SPAWN_REPAIR_THRESHOLD = 4; // синхронно с CONFIG.spawn.repairAfterMissing
+  const build = spawnBuildProbe();
+  must(drainBuild().running === false, `сборщик занят: ${JSON.stringify(build.spawnStatus())}`);
+  const volume = build.spawnClearCells();
+  must(volume.length > 2500, `объём зачистки подозрительно маленький: ${volume.length}`);
+  must(
+    volume.every((row) => row.typeId === "minecraft:air"),
+    "в объёме зачистки есть не-воздух: уборка рисовала бы блоки вместо очистки",
+  );
+  must(
+    volume.every((cell) => !build.spawnBlueprint().some((row) => cellKey(row.x, row.y, row.z) === cellKey(cell.x, cell.y, cell.z))),
+    "в объём зачистки попали клетки плана — уборка сносила бы сама себя",
+  );
+  const cell = build.spawnCriticalClearCells()[0];
+  must(cell, "нет критических пустых клеток (воздух над точкой возрождения и проёмы)");
+  mc.state.blockOverrides.set(cellKey(cell.x, cell.y, cell.z), "minecraft:tnt");
+  const launch = build.checkSpawnIntegrity();
+  must(launch.foreign >= 1, `чужой блок в воздухе над спавном не найден: ${JSON.stringify(launch)}`);
+  must(launch.pinned >= 1, `чужой блок не поставлен в ремонт: ${JSON.stringify(launch)}`);
+  build.spawnBuildTick();
+  must(mc.state.blockOverrides.get(cellKey(cell.x, cell.y, cell.z)) === "minecraft:air", "уборка не снесла чужой блок с площади");
+  drainBuild();
+  // массовое замусоривание (больше порога): обязан включиться полный sweep, а не только pins.
+  // Берём критические пустые клетки — выборка проверки смотрит 24 клетки из 2944, и
+  // «поймает ли она мой мусор» было бы лотереей; критические сверяются всегда.
+  const litter = build.spawnCriticalClearCells().slice(0, CONFIG_SPAWN_REPAIR_THRESHOLD);
+  must(litter.length >= CONFIG_SPAWN_REPAIR_THRESHOLD, `критических пустых клеток всего ${litter.length} — порога не взять`);
+  for (const row of litter) mc.state.blockOverrides.set(cellKey(row.x, row.y, row.z), "minecraft:tnt");
+  const mass = build.checkSpawnIntegrity();
+  must(mass.foreign >= litter.length, `массовый мусор найден не весь: ${mass.foreign} из ${litter.length}`);
+  must(build.spawnStatus().sweep === true, `уборка объёма не включилась при ${mass.foreign} чужих блоках: ${JSON.stringify(build.spawnStatus())}`);
+  drainBuild();
+  const left = litter.filter((row) => mc.state.blockOverrides.get(cellKey(row.x, row.y, row.z)) !== "minecraft:air");
+  must(left.length === 0, `после полной уборки осталось ${left.length} чужих блоков — sweep не доходит до конца списка`);
+  return `иностранных блоков ${mass.foreign}, sweep ${litter.length + 1} клеток, объём зачистки ${volume.length}`;
 });
 
 check("декор спавна не отрезает вход и не трогает критические клетки", () => {
@@ -2717,6 +2862,25 @@ check("ключи рангов и HUD запрошены из кода (не м�
   return `${keys.length} ключей, все запрошены из кода`;
 });
 
+check("плейсхолдеры подставляются, а не уезжают в текст", () => {
+  const i18n = globalThis.__swipecraftProbe.i18n;
+  const before = i18n.missingParamCount();
+  expectedWarns.push(/\[i18n\].*не подставлен плейсхолдер/);
+  // 1) механизм надо проверить, иначе проверка вакуумная: заведомо неполный вызов
+  const broken = i18n.raw("ru", "rtp.done", { border: 10 });
+  must(broken.includes("{x}"), `неподставленный плейсхолдер не виден в тексте: ${broken}`);
+  must(i18n.missingParamCount() === before + 1, `счётчик не вырос: ${before} → ${i18n.missingParamCount()}`);
+  must(warns.some((line) => line.includes("[i18n]") && line.includes("rtp.done")), "промах не попал в log.warn");
+  // 2) спам подавлен: повторный вызов того же ключа не даёт второго warning'а
+  const warnBefore = warns.length;
+  i18n.raw("ru", "rtp.done", { border: 10 });
+  must(warns.length === warnBefore, "предупреждение повторяется на каждый вызов");
+  // 3) на реальном пути промахов нет: если у какого-то экрана параметры разошлись — сюда
+  const left = Object.keys(globalThis.__swipecraftProbe).length;
+  must(left > 0, "проб не загружен");
+  return `один warning на ключ, за прогон промахов: ${i18n.missingParamCount() - before}`;
+});
+
 check("словари модов переведены и не оставляют сырых ключей", () => {
   const i18n = globalThis.__swipecraftProbe.i18n;
   const keys = ["quarry.title", "quarry.start", "quarry.err.near", "ui.quarry", "ui.admin.world", "spawn.status", "admin.world.spawn.build", "totem.title", "totem.forge", "totem.err.off", "ui.totems", "admin.world.totem.line", "ui.ranks", "rank.title", "rank.roll", "hud.rank", "hud.today", "hud.total", "hud.online", "hud.bar.off", "hud.bar.gated", "rank.off", "rank.err.unknown", "rank.dup.refund"];
@@ -2757,6 +2921,30 @@ check("в словаре модов мира нет мёртвых ключей"
   const dead = ruBlock.keys.filter((key) => !usedByKey(key));
   must(dead.length === 0, `мёртвые ключи (из кода их никто не запрашивает): ${dead.join(", ")}`);
   return `${ruBlock.keys.length} ключей, ru/en симметричны, все запрошены из кода`;
+});
+
+check("id записей уникальны, даже когда всё создано в одну миллисекунду", () => {
+  const util = globalThis.__swipecraftProbe.util;
+  // мок держит часы на месте (Date.now = state.clock) — это ровно тот худший случай,
+  // в котором «случайный» id на 1296 вариантов и сталкивался
+  const ids = new Set();
+  for (let index = 0; index < 5000; index += 1) ids.add(util.uniqueId("lp"));
+  must(ids.size === 5000, `из 5000 id уникальных только ${ids.size}`);
+  const shapes = [util.uniqueId("c"), util.uniqueId("d")];
+  for (const id of shapes) {
+    must(/^[a-z][0-9a-z]+$/.test(id), `id не годится как ключ dynamic property: ${id}`);
+  }
+  return `5000 уникальных, формат ${shapes[0].length} символов`;
+});
+
+check("ни одно сообщение игроку не длиннее 900 символов", () => {
+  // Bedrock обрезает длинную строку чата, и хвост отчёта теряется молча. 900 — тот же
+  // лимит, что у возврата кастомной команды (registry.ts), так что проверка единообразна
+  const long = mc.state.chat.filter((row) => String(row.text ?? "").length > 900);
+  must(long.length === 0, `сообщений длиннее 900: ${long.length}, самое длинное ${Math.max(...long.map((row) => String(row.text).length))} символов`);
+  const titles = [...mc.state.titles, ...mc.state.actionBars].filter((row) => String(row.value ?? "").length > 191);
+  must(titles.length === 0, `title/action bar длиннее 191 символа: ${titles.length}`);
+  return `${mc.state.chat.length} сообщений, самое длинное ${Math.max(0, ...mc.state.chat.map((row) => String(row.text ?? "").length))}`;
 });
 
 check("за весь прогон нет неожиданных log.error / log.warn", () => {
