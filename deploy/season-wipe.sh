@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/deploy-common.sh
+. "$SCRIPT_DIR/lib/deploy-common.sh"
+TAG="wipe"
+
 ROOT="${ROOT:-/srv/swipecraft}"
 PROPS="$ROOT/server/server.properties"
 ARCHIVE_DIR="$ROOT/backups/world-archive"
 
 log() { printf '[wipe] %s\n' "$*"; }
-die() { printf '[wipe][error] %s\n' "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "запусти от root"
 [[ "${1:-}" == "--confirm" ]] || die "запуск: $0 --confirm (и переменная CONFIRM=WIPE)"
 [[ "${CONFIRM:-}" == "WIPE" ]] || die "нет подтверждения: CONFIRM=WIPE $0 --confirm"
+ROOT="$(resolve_root)"
+PROPS="$ROOT/server/server.properties"
+ARCHIVE_DIR="$ROOT/backups/world-archive"
 [[ -f "$PROPS" ]] || die "нет $PROPS"
+OWNER="$(resolve_owner)"
 
 LEVEL_NAME="$(grep -E '^level-name=' "$PROPS" | head -1 | cut -d= -f2- | tr -d '[:space:]')"
 [[ -n "$LEVEL_NAME" ]] || die "не смог прочитать level-name"
@@ -21,6 +29,7 @@ WORLD_DIR="$ROOT/server/worlds/$LEVEL_NAME"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SEED="$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 16)"
 
+require_service
 log "остановка сервера"
 systemctl stop swipecraft.service
 
@@ -38,7 +47,9 @@ if grep -qE '^level-seed=' "$PROPS"; then
 else
   printf 'level-seed=%s\n' "$SEED" >> "$PROPS"
 fi
-chown bedrock:bedrock "$PROPS"
+if [[ $EUID -eq 0 ]]; then
+  chown "$OWNER" "$PROPS" || warn "не смог вернуть $PROPS владельцу $OWNER"
+fi
 
 log "запуск с новым миром"
 systemctl start swipecraft.service

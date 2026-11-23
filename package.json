@@ -10,7 +10,8 @@
     "check": "tsc --noEmit",
     "pack": "node tools/build.mjs && node tools/package-pack.mjs",
     "stability": "node tools/stability/build.mjs && node tools/stability/run.mjs",
-    "soak": "node tools/stability/build.mjs && node tools/soak/run.mjs"
+    "soak": "node tools/stability/build.mjs && node tools/soak/run.mjs",
+    "check:deploy": "bash tools/deploy-check/run.sh"
   },
   "devDependencies": {
     "@minecraft/server": "2.11.0",

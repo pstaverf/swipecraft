@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/deploy-common.sh
+. "$SCRIPT_DIR/lib/deploy-common.sh"
+TAG="update"
+
 ROOT="${ROOT:-/srv/swipecraft}"
-USER_NAME="${USER_NAME:-bedrock}"
+# владелец берётся из установки: на машине без пользователя bedrock (Amazon Linux,
+# ручная распаковка) жёсткий USER_NAME=bedrock ронял обновление уже ПОСЛЕ распаковки
+# бинарей — то есть сервер оставался на новых бинарях со старыми правами
+USER_NAME="${USER_NAME:-}"
+OWNER="${BDS_OWNER:-}"
 BDS_VERSION="${BDS_VERSION:-}"
 BDS_URL="${BDS_URL:-}"
 
@@ -25,6 +34,7 @@ tar -czf "$ROOT/backups/binaries/bds-$STAMP.tar.gz" \
   2>/dev/null || true
 cp -a "$ROOT/server/server.properties" "/tmp/server.properties.keep"
 
+require_service
 log "остановка"
 systemctl stop swipecraft.service
 
@@ -39,7 +49,10 @@ log "распаковка"
 unzip -q -o /tmp/bds-update.zip -d "$ROOT/server"
 rm -f /tmp/bds-update.zip
 cp -a "/tmp/server.properties.keep" "$ROOT/server/server.properties"
-chown -R "$USER_NAME:$USER_NAME" "$ROOT/server"
+[[ -n "$OWNER" ]] || OWNER="$(resolve_owner)"
+[[ -n "$USER_NAME" ]] || USER_NAME="${OWNER%%:*}"
+log "владелец файлов после обновления: $OWNER"
+chown_or_warn "$ROOT/server"
 chmod 0755 "$ROOT/server/bedrock_server"
 
 log "запуск"

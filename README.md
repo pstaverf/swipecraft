@@ -30,11 +30,13 @@ bash deploy/check-ports.sh --remote <ПУБЛИЧНЫЙ_IP>
 
 ```bash
 npm ci
-npm run check      # tsc --noEmit по @minecraft/server 2.11.0
-npm run stability  # 127 headless-проверок мета-слоя, UI, команд, модов мира и таблицы статуса на моке Script API
-npm run build      # esbuild -> packs/behavior_pack/scripts/main.js
-npm run pack       # .mcpack + .mcaddon для ручной проверки на клиенте
-bash deploy/deploy-packs.sh   # разложить паки на сервере, включить их в мире, перезапустить
+npm run check         # tsc --noEmit по @minecraft/server 2.11.0
+npm run stability     # 134 headless-проверки мета-слоя, UI, команд, модов мира и таблицы статуса на моке Script API
+npm run soak          # стресс/фазз: до 60 игроков, 23 инварианта состояния после каждого раунда (docs/QA-SOAK.md)
+npm run check:deploy  # 14 проверок скриптов деплоя на временной «установке» в /tmp, без root
+npm run build         # esbuild -> packs/behavior_pack/scripts/main.js
+npm run pack          # .mcpack + .mcaddon для ручной проверки на клиенте
+bash deploy/deploy-packs.sh   # разложить паки, привязать их к миру, при RESTART=1 перезапустить
 ```
 
 ## Команды в игре
