@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Что укладывается в $ROOT/deploy, по порядку. Новый скрипт, которого нет в этом списке,
+# на сервере просто не появится — проверка в npm run check:deploy за этим следит.
+DEPLOY_SCRIPTS=(
+  "lib/deploy-common.sh"
+  "run-bds.sh"
+  "stop-bds.sh"
+  "backup.sh"
+  "restore.sh"
+  "healthcheck.sh"
+  "check-ports.sh"
+  "deploy-packs.sh"
+  "season-wipe.sh"
+  "update-bds.sh"
+  "init-server.sh"
+)
+
 ROOT="${ROOT:-/srv/swipecraft}"
 USER_NAME="${USER_NAME:-bedrock}"
 BDS_VERSION="${BDS_VERSION:-1.26.60.6}"
@@ -64,9 +80,16 @@ fi
 install -m 0644 -o "$USER_NAME" -g "$USER_NAME" "$REPO_DIR/config/server.properties" "$ROOT/server/server.properties"
 
 log "скрипты управления"
-for f in run-bds.sh stop-bds.sh backup.sh restore.sh healthcheck.sh check-ports.sh deploy-packs.sh init-server.sh; do
+# lib идёт первым: все скрипты исходят lib/deploy-common.sh, и без него на сервере
+# падали бы с «нет общего lib/deploy-common.sh» уже после установки.
+install -d -m 0755 -o root -g "$USER_NAME" "$ROOT/deploy/lib"
+for f in "${DEPLOY_SCRIPTS[@]}"; do
   [[ -f "$REPO_DIR/deploy/$f" ]] || die "нет файла deploy/$f"
-  install -m 0750 -o root -g "$USER_NAME" "$REPO_DIR/deploy/$f" "$ROOT/deploy/$f"
+  mode=0750
+  if [[ "$f" == lib/* ]]; then
+    mode=0644   # библиотеку только исходят, право на исполнение ей не нужно
+  fi
+  install -m "$mode" -o root -g "$USER_NAME" "$REPO_DIR/deploy/$f" "$ROOT/deploy/$f"
 done
 
 if [[ ! -e "$ROOT/server/behavior_packs" ]]; then

@@ -194,6 +194,25 @@ else
   bad "$name" "не подключили библиотеку:$missing"
 fi
 
+# ── 10. установщик укладывает всё, что потом source'ится с сервера ────────────
+name="install-bds.sh укладывает lib и все скрипты"
+missing=""
+for f in "$REPO"/deploy/*.sh; do
+  base="$(basename "$f")"
+  # install-bds.sh и firewall.sh запускаются из репозитория, на сервере их не должно быть
+  [[ "$base" == "install-bds.sh" || "$base" == "firewall.sh" ]] && continue
+  grep -qF "\"$base\"" "$REPO/deploy/install-bds.sh" || missing="$missing $base"
+done
+for f in "$REPO"/deploy/lib/*; do
+  [[ -e "$f" ]] || continue
+  grep -qF "\"lib/$(basename "$f")\"" "$REPO/deploy/install-bds.sh" || missing="$missing lib/$(basename "$f")"
+done
+if [[ -z "$missing" ]]; then
+  ok "$name"
+else
+  bad "$name" "на сервере не окажется:$missing"
+fi
+
 echo
 echo "всего проверок: $((PASS + FAIL)), провалов: $FAIL"
 if [[ $FAIL -gt 0 ]]; then
