@@ -76,9 +76,74 @@ BDS по этому поводу тишина. Сейчас так не дела
   уложен ли пак, привязан ли его uuid к миру и не остались ли файлы в руках у пользователя,
   от которого служба не работает.
 
+Сборка на сервере обязательна: `packs/behavior_pack/scripts/main.js` — артефакт, в git он
+не лежит. `npm ci && npm run build` перед укладкой. Предупреждение npm про заблокированный
+postinstall у `esbuild` на результат не влияет (платформенный бинарник `@esbuild/linux-x64`
+ставится обычным пакетом); если `npm run build` всё же упадёт — `npm install-scripts approve
+esbuild && npm rebuild esbuild`.
+
+### BDS ещё не распакован: установка вручную (Amazon Linux 2023, контейнер)
+
+`install-bds.sh` умеет только Ubuntu (`apt-get`, `useradd`, systemd). На остальном — то же
+самое руками. Пока `pgrep -af bedrock_server` пуст, а `server/server.properties` нет,
+деплоить некуда — и скрипты правильно останавливаются на preflight, ничего не создавая.
+
+```bash
+SRC=$HOME/swipecraft        # копия репозитория (в ней же и собираем)
+export ROOT=$HOME/bds       # каталог установки — его передаём всем скриптам
+
+# 0. сборки BDS требуют glibc 2.34+: на Amazon Linux 2 (glibc 2.26) не запустится,
+#    на AL2023 — да. Проверить: ldd --version | head -1
+sudo dnf install -y curl unzip tar rsync procps-ng iproute logrotate libcurl nftables
+
+# 1. каталоги, которые ждут скрипты: ROOT/{server,logs,packs,backups,keys}
+mkdir -p "$ROOT"/{server,logs,packs,backups,keys}
+cd /tmp && curl -fLO https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.60.6.zip
+unzip -o bedrock-server-1.26.60.6.zip -d "$ROOT/server" && rm bedrock-server-1.26.60.6.zip
+ldd "$ROOT/server/bedrock_server" | grep 'not found'   # пусто = библиотек хватает
+
+# 2. конфиг и линки: BDS видит паки только в server/behavior_packs
+cp "$SRC/config/server.properties" "$ROOT/server/server.properties"
+ln -sfn "$ROOT/packs/behavior_packs" "$ROOT/server/behavior_packs"
+ln -sfn "$ROOT/packs/resource_packs" "$ROOT/server/resource_packs"
+
+# 3. паки: собирать и укладывать из копии репозитория, не из $ROOT/deploy
+cd "$SRC" && npm ci && npm run build
+DRY_RUN=1 bash "$SRC/deploy/deploy-packs.sh"   # посмотрит на ROOT, ничего не тронет
+bash "$SRC/deploy/deploy-packs.sh"             # мир появится после первого старта —
+                                               # скрипт сам скажет «выполни повторно»
+
+# 4. первый запуск (создаёт мир) — в tmux/screen; run-bds.sh ждёт cwd = каталог сервера
+cd "$ROOT/server" && CONSOLE_FIFO="$ROOT/.console.fifo" \
+  bash "$SRC/deploy/run-bds.sh" 2>&1 | tee -a "$ROOT/logs/console.log"
+
+# 5. идентичность и геймрулы, повторная укладка (теперь worlds/swipecraft есть), рестарт
+ROOT="$ROOT" CONSOLE_FIFO="$ROOT/.console.fifo" bash "$SRC/deploy/init-server.sh"
+ROOT="$ROOT" bash "$SRC/deploy/deploy-packs.sh"
+ROOT="$ROOT" CONSOLE_FIFO="$ROOT/.console.fifo" bash "$SRC/deploy/stop-bds.sh"
+```
+
+Дальше — то, чего ни один скрипт за тебя на EC2 не сделает:
+
+- **Security group.** `deploy/firewall.sh` открывает порты внутри машины; снаружи их ещё
+  нужно впустить в группе безопасности: **TCP 19132** (сигналинг NetherNet) и **UDP
+  19132–19250** (по порту на игрока). Проверять с другой машины: `bash
+  deploy/check-ports.sh --remote <публичный_IP>`, не с самой себя.
+- **sysctl** для NetherNet: `sudo cp deploy/sysctl-nethernet.conf
+  /etc/sysctl.d/99-swipecraft.conf && sudo sysctl --system`. Без него сервер поднимется и
+  даже поедет, но на сотнях UDP-портов упрётся в дефолтные очереди.
+- **systemd по желанию.** Юнит из `deploy/systemd/` требует правки `User=`/`Group=` и
+  путей, а для установки внутри `/home` — ещё и удаления `ProtectHome=yes`. Без юнита
+  `restore.sh`, `update-bds.sh` и `season-wipe.sh` отказываются работать по замыслу
+  (остановка и запуск должны быть атомарными); `deploy-packs.sh` и `healthcheck.sh`
+  работают и так.
+- **Права.** Если сервер запускается от твоего пользователя, `sudo` для деплоя не нужен
+  вовсе: `chown` просто пропустится с подсказкой, а файлы и так твои. `sudo` понадобится,
+  только если BDS работает от отдельного пользователя — и тогда не забудь `-E`.
+
 Сами скрипты деплоя проверяются без сервера и без root: `npm run check:deploy` (временная
-«установка» в `/tmp`, 14 проверок: идемпотентность, dry-run, привязка uuid, поведение при
-кривом `ROOT` и несуществующем пользователе).
+«установка» в `/tmp`, 15 проверок: идемпотентность, dry-run, привязка uuid, поведение при
+кривом `ROOT`, несуществующем пользователе и покрытие `install-bds.sh`).
 
 ## 3. Проверка, что порты реально открыты снаружи
 

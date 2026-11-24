@@ -38,7 +38,7 @@ ok() { PASS=$((PASS + 1)); [[ $QUIET -eq 1 ]] || OUT+="$(printf '  PASS  %s\n' "
 bad() { FAIL=$((FAIL + 1)); OUT+="$(printf '  FAIL  %s\n' "$*")"$'\n'; }
 
 if [[ ! -f "$PROPS" ]]; then
-  bad "нет $PROPS: это не установка (или ROOT указан неверно). Запусти так: ROOT=/путь/до/установки $0; где лежит сервер — подскажет pgrep -af bedrock_server"
+  bad "нет $PROPS: это не установка (или ROOT указан неверно). Запусти так: ROOT=/путь/до/установки $0; где лежит сервер — подскажет pgrep -af bedrock_server (пусто = сервер не запущен; нет $ROOT/server/bedrock_server = BDS вообще не распакован, см. docs/DEPLOY.md §2b)"
   hard_stop
 fi
 

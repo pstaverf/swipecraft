@@ -72,7 +72,7 @@ resolve_root() {
     printf '%s' "$guess"
     return 0
   fi
-  die "не нашёл установку сервера: ни в ROOT=$ROOT, ни у запущенного bedrock_server нет server/server.properties. Укажи явно: ROOT=/путь/до/установки $0 (посмотри, где лежит bedrock_server: pgrep -af bedrock_server)"
+  die "не нашёл установку сервера: ни в ROOT=$ROOT, ни у запущенного bedrock_server нет server/server.properties. Укажи явно: ROOT=/путь/до/установки $0 (где лежит сервер — подскажет pgrep -af bedrock_server). Пустой pgrep и отсутствующая установка = BDS ещё не распакован, это не путь деплоя: см. docs/DEPLOY.md, раздел 2b"
 }
 
 # Владелец файлов сервера — «кому chownить», если мы вообще можем chownить.

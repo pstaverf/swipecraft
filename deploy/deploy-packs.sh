@@ -29,7 +29,9 @@ DST_RP="$ROOT/packs/resource_packs/swipecraft_rp"
 # ── 1. preflight: всё проверяем ДО первой записи ──────────────────────────────
 [[ -f "$SRC_BP/manifest.json" ]] || die "нет $SRC_BP/manifest.json — репозиторий выглядит неполным"
 [[ -f "$SRC_RP/manifest.json" ]] || die "нет $SRC_RP/manifest.json — репозиторий выглядит неполным"
-[[ -s "$SRC_BP/scripts/main.js" ]] || die "нет собранного $SRC_BP/scripts/main.js — выполни npm run build (или npm run pack)"
+# main.js в git намеренно не лежит — это артефакт сборки, и собирать его надо в копии
+# репозитория (отсюда REPO_DIR), а не в $ROOT: паки скрипт берёт именно оттуда
+[[ -s "$SRC_BP/scripts/main.js" ]] || die "нет собранного $SRC_BP/scripts/main.js — выполни npm ci && npm run build (main.js в git нет, это норма)"
 
 ROOT="$(resolve_root)"
 DST_BP="$ROOT/packs/behavior_packs/swipecraft_bp"
