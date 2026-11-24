@@ -94,12 +94,27 @@ export ROOT=$HOME/bds       # каталог установки — его пе�
 
 # 0. сборки BDS требуют glibc 2.34+: на Amazon Linux 2 (glibc 2.26) не запустится,
 #    на AL2023 — да. Проверить: ldd --version | head -1
-sudo dnf install -y curl unzip tar rsync procps-ng iproute logrotate libcurl nftables
+#    ВАЖНО: в AL2023 уже стоят curl-minimal и libcurl-minimal, а полные curl/libcurl с
+#    ними конфликтуют — и dnf откатывает ВЕСЬ транзакцию, то есть не ставится ни один
+#    пакет из строки, без единого «ok». На живой машине это вылезло шагом позже
+#    (скачивание), и дальше цепочка сообщений читалась как «сломанный скрипт»:
+#    curl (92) → архива нет → «unzip: cannot find or open» → «ldd: … No such file» →
+#    «./bedrock_server: No such file or directory». Поэтому: ставим только то, чего
+#    реально нет, и проверяем результат командами, а не молча верим dnf:
+sudo dnf -y install unzip rsync procps-ng iproute logrotate nftables
+command -v unzip >/dev/null || echo "unzip не поставился — смотри вывод dnf выше"
+ldconfig -p | grep -q 'libcurl\.so\.4' || echo "libcurl.so.4 нет: sudo dnf swap -y libcurl-minimal libcurl"
 
 # 1. каталоги, которые ждут скрипты: ROOT/{server,logs,packs,backups,keys}
 mkdir -p "$ROOT"/{server,logs,packs,backups,keys}
-cd /tmp && curl -fLO https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.60.6.zip
-unzip -o bedrock-server-1.26.60.6.zip -d "$ROOT/server" && rm bedrock-server-1.26.60.6.zip
+cd /tmp
+# minecraft.net на HTTP/2 обрывает отдачу архива с «curl: (92) HTTP/2 stream 1 reset by
+# server (error 0x2 INTERNAL_ERROR)» — это не сеть и не права, лечится --http1.1
+curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 -o bds.zip \
+  https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.60.6.zip
+ls -l bds.zip                                   # меньше ~50 МБ = докачался криво, повтори
+unzip -q -o bds.zip -d "$ROOT/server" && rm -f bds.zip
+chmod 0755 "$ROOT/server/bedrock_server"
 ldd "$ROOT/server/bedrock_server" | grep 'not found'   # пусто = библиотек хватает
 
 # 2. конфиг и линки: BDS видит паки только в server/behavior_packs
@@ -125,6 +140,9 @@ ROOT="$ROOT" CONSOLE_FIFO="$ROOT/.console.fifo" bash "$SRC/deploy/stop-bds.sh"
 
 Дальше — то, чего ни один скрипт за тебя на EC2 не сделает:
 
+- **404 на скачивании** — значит имя билда сменилось: возьми актуальное с
+  https://www.minecraft.net/download/server/bedrock (в `install-bds.sh` за это отвечает
+  `BDS_VERSION`, в `deploy/update-bds.sh` — тоже).
 - **Security group.** `deploy/firewall.sh` открывает порты внутри машины; снаружи их ещё
   нужно впустить в группе безопасности: **TCP 19132** (сигналинг NetherNet) и **UDP
   19132–19250** (по порту на игрока). Проверять с другой машины: `bash

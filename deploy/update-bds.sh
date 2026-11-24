@@ -39,7 +39,9 @@ log "остановка"
 systemctl stop swipecraft.service
 
 log "загрузка $BDS_VERSION"
-if ! curl -fL --retry 3 -o /tmp/bds-update.zip "$BDS_URL"; then
+# --http1.1: minecraft.net на HTTP/2 рвёт отдачу архива («curl: (92) … INTERNAL_ERROR»),
+# а без флага это выглядело бы как «сервер не обновился» уже после остановки службы
+if ! curl -fL --http1.1 --retry 3 -o /tmp/bds-update.zip "$BDS_URL"; then
   cp -a "/tmp/server.properties.keep" "$ROOT/server/server.properties"
   systemctl start swipecraft.service
   die "не удалось скачать $BDS_URL, сервер возвращён в работу на старой версии"
@@ -48,6 +50,9 @@ fi
 log "распаковка"
 unzip -q -o /tmp/bds-update.zip -d "$ROOT/server"
 rm -f /tmp/bds-update.zip
+# unzip права из архива обычно сохраняет, но без этого шага сервер встал бы на
+# «Permission denied» — проверка стоит одной строки
+chmod 0755 "$ROOT/server/bedrock_server"
 cp -a "/tmp/server.properties.keep" "$ROOT/server/server.properties"
 [[ -n "$OWNER" ]] || OWNER="$(resolve_owner)"
 [[ -n "$USER_NAME" ]] || USER_NAME="${OWNER%%:*}"

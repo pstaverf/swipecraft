@@ -60,7 +60,9 @@ install -d -m 0755 -o root -g root "$ROOT/deploy"
 
 if [[ ! -x "$ROOT/server/bedrock_server" ]]; then
   log "загрузка BDS $BDS_VERSION"
-  curl -fL --retry 3 --retry-delay 2 -o /tmp/bds.zip "$BDS_URL" || die "не удалось скачать $BDS_URL — проверь актуальный билд на https://www.minecraft.net/download/server/bedrock и передай BDS_VERSION"
+  # --http1.1 обязателен: minecraft.net на HTTP/2 рвёт отдачу архива с «curl: (92) …
+  # INTERNAL_ERROR», и тогда unzip падает на несуществующем файле
+  curl -fL --http1.1 --retry 3 --retry-delay 2 -o /tmp/bds.zip "$BDS_URL" || die "не удалось скачать $BDS_URL — проверь актуальный билд на https://www.minecraft.net/download/server/bedrock и передай BDS_VERSION"
   unzip -q -o /tmp/bds.zip -d "$ROOT/server"
   rm -f /tmp/bds.zip
   chown -R "$USER_NAME:$USER_NAME" "$ROOT/server"

@@ -194,7 +194,27 @@ else
   bad "$name" "не подключили библиотеку:$missing"
 fi
 
-# ── 10. установщик укладывает всё, что потом source'ится с сервера ────────────
+# ── 10. run-bds.sh: отсутствие BDS объясняется, а не прячется за строкой 15 ────
+# timeout принципиален: без preflight скрипт уходит в «tail -f $FIFO | ./bedrock_server»
+# и проверка не падает, а висит — зависший харнес nobody стал бы считать «зелёным» прогоном
+name="run-bds.sh объясняет отсутствующий/неисполняемый bedrock_server"
+NOBDS="$TMP/nobds"
+mkdir -p "$NOBDS"
+out="$(cd "$NOBDS" && CONSOLE_FIFO="$TMP/fifo/console.fifo" timeout 15 bash "$REPO/deploy/run-bds.sh" 2>&1 || true)"
+if ! grep -q "BDS не распакован" <<<"$out"; then
+  bad "$name" "нет объяснения: $(printf '%s' "$out" | tail -1)"
+else
+  # и второй случай: файл есть, но без +x — должен быть chmod, а не «Permission denied»
+  touch "$NOBDS/bedrock_server"
+  out2="$(cd "$NOBDS" && CONSOLE_FIFO="$TMP/fifo/console.fifo" timeout 15 bash "$REPO/deploy/run-bds.sh" 2>&1 || true)"
+  if ! grep -q "chmod 0755" <<<"$out2"; then
+    bad "$name" "на неисполняемый бинарник отвечает так: $(printf '%s' "$out2" | tail -1)"
+  else
+    ok "$name"
+  fi
+fi
+
+# ── 11. установщик укладывает всё, что потом source'ится с сервера ────────────
 name="install-bds.sh укладывает lib и все скрипты"
 missing=""
 for f in "$REPO"/deploy/*.sh; do
